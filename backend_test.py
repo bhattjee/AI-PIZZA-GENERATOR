@@ -203,7 +203,8 @@ class PizzaGeneratorAPITester:
 
     def test_save_cooking_progress(self):
         """Test saving cooking progress"""
-        payload = {
+        # The API expects query parameters, not JSON body
+        params = {
             "session_id": self.session_id,
             "step_number": 1,
             "completed": True
@@ -214,7 +215,7 @@ class PizzaGeneratorAPITester:
             "POST",
             "save-cooking-progress",
             200,
-            data=payload
+            params=params
         )
         
         if success:
