@@ -24,7 +24,12 @@ class PizzaGeneratorAPITester:
             if method == 'GET':
                 response = requests.get(url, headers=headers, params=params)
             elif method == 'POST':
-                response = requests.post(url, json=data, headers=headers)
+                if params:
+                    # If params are provided, send as query parameters
+                    response = requests.post(url, headers=headers, params=params)
+                else:
+                    # Otherwise send as JSON body
+                    response = requests.post(url, json=data, headers=headers)
             
             success = response.status_code == expected_status
             if success:
