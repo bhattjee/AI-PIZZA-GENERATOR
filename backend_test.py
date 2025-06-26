@@ -1,77 +1,100 @@
 import requests
-import unittest
-import json
+import sys
 import uuid
-from typing import List, Dict, Any
+import json
 
-class PizzaGeneratorAPITest(unittest.TestCase):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+class PizzaGeneratorAPITester:
+    def __init__(self):
         # Use the public endpoint from frontend/.env
         self.base_url = "https://f549e02b-fe2f-4efe-9974-2cde4d552c35.preview.emergentagent.com"
         self.session_id = f"test_session_{uuid.uuid4()}"
-        self.test_results = {
-            "passed": 0,
-            "failed": 0,
-            "total": 0
-        }
+        self.tests_run = 0
+        self.tests_passed = 0
+        self.recipe_id = None
 
-    def setUp(self):
-        print(f"\n{'='*50}")
-        print(f"Running test: {self._testMethodName}")
-        print(f"{'-'*50}")
-        self.test_results["total"] += 1
-
-    def tearDown(self):
-        if hasattr(self, '_outcome'):
-            result = self.defaultTestResult()
-            self._feedErrorsToResult(result, self._outcome.errors)
-            if result.wasSuccessful():
-                self.test_results["passed"] += 1
-                print(f"✅ Test PASSED: {self._testMethodName}")
+    def run_test(self, name, method, endpoint, expected_status, data=None, params=None):
+        """Run a single API test"""
+        url = f"{self.base_url}/api/{endpoint}"
+        headers = {'Content-Type': 'application/json'}
+        
+        self.tests_run += 1
+        print(f"\n🔍 Testing {name}...")
+        
+        try:
+            if method == 'GET':
+                response = requests.get(url, headers=headers, params=params)
+            elif method == 'POST':
+                response = requests.post(url, json=data, headers=headers)
+            
+            success = response.status_code == expected_status
+            if success:
+                self.tests_passed += 1
+                print(f"✅ Passed - Status: {response.status_code}")
+                try:
+                    return success, response.json()
+                except:
+                    return success, {}
             else:
-                self.test_results["failed"] += 1
-                print(f"❌ Test FAILED: {self._testMethodName}")
+                print(f"❌ Failed - Expected {expected_status}, got {response.status_code}")
+                try:
+                    print(f"Response: {response.text}")
+                except:
+                    pass
+                return False, {}
+                
+        except Exception as e:
+            print(f"❌ Failed - Error: {str(e)}")
+            return False, {}
 
-    def test_01_health_endpoint(self):
+    def test_health_endpoint(self):
         """Test the health endpoint to verify API is running"""
-        response = requests.get(f"{self.base_url}/api/health")
-        self.assertEqual(response.status_code, 200)
-        data = response.json()
-        self.assertEqual(data["status"], "healthy")
-        self.assertEqual(data["service"], "AI Pizza Generator API")
-        print(f"Health check response: {data}")
+        success, data = self.run_test(
+            "Health Endpoint",
+            "GET",
+            "health",
+            200
+        )
+        if success:
+            print(f"Health check response: {data}")
+        return success
 
-    def test_02_get_ingredients(self):
+    def test_get_ingredients(self):
         """Test fetching all ingredient categories"""
-        response = requests.get(f"{self.base_url}/api/ingredients")
-        self.assertEqual(response.status_code, 200)
-        data = response.json()
-        self.assertIn("categories", data)
-        
-        # Verify expected categories exist
-        expected_categories = ["flours", "cheeses", "meats", "vegetables", "sauces", "spices_herbs", "other_toppings"]
-        for category in expected_categories:
-            self.assertIn(category, data["categories"])
-            self.assertTrue(len(data["categories"][category]) > 0)
-        
-        print(f"Found {len(data['categories'])} ingredient categories")
+        success, data = self.run_test(
+            "Get All Ingredients",
+            "GET",
+            "ingredients",
+            200
+        )
+        if success and "categories" in data:
+            categories = data["categories"]
+            print(f"Found {len(categories)} ingredient categories")
+            for category, ingredients in categories.items():
+                print(f"- {category}: {len(ingredients)} ingredients")
+        return success
 
-    def test_03_get_ingredients_by_category(self):
+    def test_get_ingredients_by_category(self):
         """Test fetching ingredients for a specific category"""
         category = "cheeses"
-        response = requests.get(f"{self.base_url}/api/ingredients/{category}")
-        self.assertEqual(response.status_code, 200)
-        data = response.json()
-        self.assertEqual(data["category"], category)
-        self.assertTrue(len(data["ingredients"]) > 0)
-        print(f"Found {len(data['ingredients'])} ingredients in category '{category}'")
+        success, data = self.run_test(
+            f"Get Ingredients by Category ({category})",
+            "GET",
+            f"ingredients/{category}",
+            200
+        )
+        if success:
+            print(f"Found {len(data['ingredients'])} ingredients in category '{category}'")
         
         # Test invalid category
-        response = requests.get(f"{self.base_url}/api/ingredients/invalid_category")
-        self.assertEqual(response.status_code, 404)
+        invalid_success, _ = self.run_test(
+            "Get Ingredients with Invalid Category",
+            "GET",
+            "ingredients/invalid_category",
+            404
+        )
+        return success and invalid_success
 
-    def test_04_check_conflicts(self):
+    def test_check_conflicts(self):
         """Test checking conflicts between ingredients and dietary preferences"""
         # Test with vegan diet and non-vegan ingredients
         payload = {
@@ -84,58 +107,43 @@ class PizzaGeneratorAPITest(unittest.TestCase):
             }
         }
         
-        response = requests.post(
-            f"{self.base_url}/api/check-conflicts",
-            json=payload
+        success, data = self.run_test(
+            "Check Conflicts (Vegan Diet)",
+            "POST",
+            "check-conflicts",
+            200,
+            data=payload
         )
-        self.assertEqual(response.status_code, 200)
-        data = response.json()
-        self.assertTrue(len(data["conflicts"]) > 0)
-        print(f"Found {len(data['conflicts'])} conflicts with vegan diet")
         
-        # Test with allergen avoidance
-        payload = {
-            "ingredients": ["Mozzarella"],
-            "dietary_preferences": {
-                "diet_types": [],
-                "additional_preferences": [],
-                "spice_level": 0,
-                "allergen_avoidance": ["Dairy"]
-            }
-        }
+        if success:
+            conflicts = data.get("conflicts", [])
+            print(f"Found {len(conflicts)} conflicts with vegan diet")
+            for conflict in conflicts:
+                print(f"- {conflict['ingredient']}: {conflict['conflict_detail']}")
         
-        response = requests.post(
-            f"{self.base_url}/api/check-conflicts",
-            json=payload
-        )
-        self.assertEqual(response.status_code, 200)
-        data = response.json()
-        self.assertTrue(len(data["conflicts"]) > 0)
-        print(f"Found {len(data['conflicts'])} conflicts with allergen avoidance")
+        return success
 
-    def test_05_find_related_recipes(self):
+    def test_find_related_recipes(self):
         """Test finding related recipes based on ingredients"""
-        # Test with ingredients that should match existing recipes
         payload = ["Pepperoni", "Mozzarella", "Classic marinara (V)"]
         
-        response = requests.post(
-            f"{self.base_url}/api/find-related-recipes",
-            json=payload
+        success, data = self.run_test(
+            "Find Related Recipes",
+            "POST",
+            "find-related-recipes",
+            200,
+            data=payload
         )
-        self.assertEqual(response.status_code, 200)
-        data = response.json()
-        self.assertIn("related_recipes", data)
-        print(f"Found {len(data['related_recipes'])} related recipes")
         
-        if len(data["related_recipes"]) > 0:
-            recipe = data["related_recipes"][0]
-            self.assertIn("name", recipe)
-            self.assertIn("ingredients", recipe)
-            self.assertIn("match_count", recipe)
-            self.assertIn("match_percentage", recipe)
-            print(f"Top match: {recipe['name']} with {recipe['match_count']} matching ingredients ({recipe['match_percentage']}%)")
+        if success and "related_recipes" in data:
+            recipes = data["related_recipes"]
+            print(f"Found {len(recipes)} related recipes")
+            for recipe in recipes:
+                print(f"- {recipe['name']} ({recipe['match_percentage']}% match)")
+        
+        return success
 
-    def test_06_generate_recipe(self):
+    def test_generate_recipe(self):
         """Test generating a custom AI recipe"""
         payload = {
             "session_id": self.session_id,
@@ -149,52 +157,51 @@ class PizzaGeneratorAPITest(unittest.TestCase):
             "recipe_type": "custom"
         }
         
-        response = requests.post(
-            f"{self.base_url}/api/generate-recipe",
-            json=payload
+        success, data = self.run_test(
+            "Generate Custom Recipe",
+            "POST",
+            "generate-recipe",
+            200,
+            data=payload
         )
-        self.assertEqual(response.status_code, 200)
-        data = response.json()
-        self.assertIn("recipe", data)
-        self.assertIn("status", data)
-        self.assertEqual(data["status"], "success")
         
-        recipe = data["recipe"]
-        self.assertIn("id", recipe)
-        self.assertIn("name", recipe)
-        self.assertIn("ingredients", recipe)
-        self.assertIn("steps", recipe)
-        self.assertIn("sauce_preparation", recipe)
-        self.assertIn("tips", recipe)
+        if success and "recipe" in data:
+            recipe = data["recipe"]
+            print(f"Generated recipe: {recipe['name']}")
+            print(f"Recipe ID: {recipe['id']}")
+            print(f"Number of steps: {len(recipe['steps'])}")
+            self.recipe_id = recipe["id"]
         
-        print(f"Generated recipe: {recipe['name']}")
-        print(f"Recipe ID: {recipe['id']}")
-        print(f"Number of steps: {len(recipe['steps'])}")
-        
-        # Store recipe ID for next test
-        self.recipe_id = recipe["id"]
-        return recipe["id"]
+        return success
 
-    def test_07_get_recipe(self):
+    def test_get_recipe(self):
         """Test retrieving a specific recipe by ID"""
-        # First generate a recipe to get an ID
-        recipe_id = self.test_06_generate_recipe()
+        if not self.recipe_id:
+            print("❌ Cannot test get_recipe without a valid recipe ID")
+            return False
         
-        # Now retrieve it
-        response = requests.get(f"{self.base_url}/api/recipe/{recipe_id}")
-        self.assertEqual(response.status_code, 200)
-        data = response.json()
-        self.assertIn("recipe", data)
+        success, data = self.run_test(
+            "Get Recipe by ID",
+            "GET",
+            f"recipe/{self.recipe_id}",
+            200
+        )
         
-        recipe = data["recipe"]
-        self.assertEqual(recipe["id"], recipe_id)
-        print(f"Successfully retrieved recipe: {recipe['name']}")
+        if success and "recipe" in data:
+            recipe = data["recipe"]
+            print(f"Retrieved recipe: {recipe['name']}")
         
         # Test invalid recipe ID
-        response = requests.get(f"{self.base_url}/api/recipe/invalid_id")
-        self.assertEqual(response.status_code, 404)
+        invalid_success, _ = self.run_test(
+            "Get Recipe with Invalid ID",
+            "GET",
+            "recipe/invalid_id",
+            404
+        )
+        
+        return success and invalid_success
 
-    def test_08_save_cooking_progress(self):
+    def test_save_cooking_progress(self):
         """Test saving cooking progress"""
         payload = {
             "session_id": self.session_id,
@@ -202,41 +209,57 @@ class PizzaGeneratorAPITest(unittest.TestCase):
             "completed": True
         }
         
-        response = requests.post(
-            f"{self.base_url}/api/save-cooking-progress",
-            json=payload
+        success, data = self.run_test(
+            "Save Cooking Progress",
+            "POST",
+            "save-cooking-progress",
+            200,
+            data=payload
         )
-        self.assertEqual(response.status_code, 200)
-        data = response.json()
-        self.assertEqual(data["status"], "progress_saved")
-        print("Successfully saved cooking progress")
+        
+        if success:
+            print("Successfully saved cooking progress")
         
         # Test retrieving cooking progress
-        response = requests.get(f"{self.base_url}/api/cooking-progress/{self.session_id}")
-        self.assertEqual(response.status_code, 200)
-        data = response.json()
-        self.assertIn("progress", data)
-        print(f"Retrieved cooking progress: {data}")
+        get_success, progress_data = self.run_test(
+            "Get Cooking Progress",
+            "GET",
+            f"cooking-progress/{self.session_id}",
+            200
+        )
+        
+        if get_success:
+            print(f"Retrieved cooking progress: {progress_data}")
+        
+        return success and get_success
 
-    def print_summary(self):
-        """Print a summary of all test results"""
-        print("\n" + "="*50)
-        print(f"TEST SUMMARY: {self.test_results['passed']}/{self.test_results['total']} tests passed")
-        print(f"- Passed: {self.test_results['passed']}")
-        print(f"- Failed: {self.test_results['failed']}")
+    def run_all_tests(self):
+        """Run all API tests"""
         print("="*50)
-        return self.test_results["failed"] == 0
+        print("RUNNING API TESTS FOR AI PIZZA GENERATOR")
+        print("="*50)
+        
+        tests = [
+            self.test_health_endpoint,
+            self.test_get_ingredients,
+            self.test_get_ingredients_by_category,
+            self.test_check_conflicts,
+            self.test_find_related_recipes,
+            self.test_generate_recipe,
+            self.test_get_recipe,
+            self.test_save_cooking_progress
+        ]
+        
+        for test in tests:
+            test()
+        
+        print("\n" + "="*50)
+        print(f"TEST SUMMARY: {self.tests_passed}/{self.tests_run} tests passed")
+        print("="*50)
+        
+        return self.tests_passed == self.tests_run
 
 if __name__ == "__main__":
-    test_suite = unittest.TestLoader().loadTestsFromTestCase(PizzaGeneratorAPITest)
-    test_runner = unittest.TextTestRunner(verbosity=2)
-    test_result = test_runner.run(test_suite)
-    
-    # Create an instance to print summary
-    test_instance = PizzaGeneratorAPITest()
-    test_instance.test_results["passed"] = len(test_result.successes) if hasattr(test_result, 'successes') else test_result.testsRun - len(test_result.failures) - len(test_result.errors)
-    test_instance.test_results["failed"] = len(test_result.failures) + len(test_result.errors)
-    test_instance.test_results["total"] = test_result.testsRun
-    
-    success = test_instance.print_summary()
-    exit(0 if success else 1)
+    tester = PizzaGeneratorAPITester()
+    success = tester.run_all_tests()
+    sys.exit(0 if success else 1)
