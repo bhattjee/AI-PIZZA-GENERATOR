@@ -30,5 +30,20 @@ module.exports = {
       return webpackConfig;
     },
   },
+  devServer: {
+    // Fix WebSocket issues
+    client: {
+      webSocketURL: {
+        hostname: 'localhost',
+        pathname: '/ws',
+        port: 3000,
+        protocol: 'ws',
+      },
+    },
+    // Disable host checking for local development
+    allowedHosts: 'all',
+    // Fix hot reload
+    hot: !config.disableHotReload,
+    liveReload: !config.disableHotReload,
+  },
 };
-  
