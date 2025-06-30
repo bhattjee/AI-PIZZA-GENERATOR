@@ -37,7 +37,7 @@ app.add_middleware(
         "https://ai-pizza-frontend.vercel.app",
         "https://pizzacrust.onrender.com"
     ],
-    allow_origin_regex="https://.*\.vercel\.app",
+    allow_origin_regex=r"https://.*\.vercel\.app",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
