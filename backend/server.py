@@ -31,8 +31,13 @@ logger = logging.getLogger(__name__)
 # Configure CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000",
-                   "http://127.0.0.1:3000"],  # Both variants
+    allow_origins=[
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "https://ai-pizza-frontend.vercel.app",
+        "https://pizzacrust.onrender.com"
+    ],
+    allow_origin_regex="https://.*\.vercel\.app",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -40,7 +45,6 @@ app.add_middleware(
 )
 
 # Add OPTIONS handler
-
 
 @app.options("/{path:path}")
 async def options_handler():
