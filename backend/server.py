@@ -83,36 +83,33 @@ logger.info(
     f"Connecting to MongoDB at: {MONGO_URI.split('@')[-1].split('/')[0]}")
 
 # Initialize MongoDB connection
-
-
 def get_mongo_client():
+    """Initialize MongoDB client with proper error handling"""
+    try:
+        # Initialize connection
+        temp_client = AsyncIOMotorClient(
+            MONGO_URI,
+            tls=True,
+            tlsCAFile=certifi.where(),
+            connectTimeoutMS=10000,
+            socketTimeoutMS=30000,
+            serverSelectionTimeoutMS=10000,
+            maxPoolSize=10,
+            retryWrites=True,
+            retryReads=True
+        )
 
-
-    # Replace the existing connection code with this:
-try:
-    # Initialize connection
-    temp_client = AsyncIOMotorClient(
-        MONGO_URI,
-        tls=True,
-        tlsCAFile=certifi.where(),
-        connectTimeoutMS=10000,
-        socketTimeoutMS=30000,
-        serverSelectionTimeoutMS=10000,
-        maxPoolSize=10,
-        retryWrites=True,
-        retryReads=True
-    )
-
-    # Assign to global variables
-    global client, db, recipes_collection, sessions_collection
-    client = temp_client
-    db = client.pizza_generator
-    recipes_collection = db.recipes
-    sessions_collection = db.user_sessions
-    logger.info("MongoDB client configured successfully")
-except Exception as e:
-    logger.error(f"Failed to configure MongoDB client: {e}")
-    raise
+        # Assign to global variables
+        global client, db, recipes_collection, sessions_collection
+        client = temp_client
+        db = client.pizza_generator
+        recipes_collection = db.recipes
+        sessions_collection = db.user_sessions
+        logger.info("MongoDB client configured successfully")
+        return client
+    except Exception as e:
+        logger.error(f"Failed to configure MongoDB client: {e}")
+        raise
 
 # Global MongoDB client
 try:
@@ -125,12 +122,10 @@ except Exception as e:
     logger.error(f"Failed to initialize MongoDB: {e}")
     raise
 
-
 # Create custom SSL context
 ssl_context = ssl.create_default_context(cafile=certifi.where())
 ssl_context.check_hostname = False
 ssl_context.verify_mode = ssl.CERT_REQUIRED
-
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
@@ -141,8 +136,6 @@ async def global_exception_handler(request: Request, exc: Exception):
     )
 
 # Health check endpoint
-
-
 @app.get("/health")
 async def health_check():
     try:
@@ -153,7 +146,7 @@ async def health_check():
         # Try to reconnect
         try:
             global client, db, recipes_collection, sessions_collection
-            client = await get_mongo_client()
+            client = get_mongo_client()
             db = client.pizza_generator
             recipes_collection = db.recipes
             sessions_collection = db.user_sessions
@@ -164,12 +157,10 @@ async def health_check():
                 content={"status": "unhealthy", "error": str(e)},
             )
 
-
 # Pydantic models
 class IngredientSelection(BaseModel):
     category: str
     ingredients: List[str]
-
 
 class DietaryPreferences(BaseModel):
     diet_types: List[str] = []
@@ -177,13 +168,11 @@ class DietaryPreferences(BaseModel):
     spice_level: int = 0  # 0-4 scale
     allergen_avoidance: List[str] = []
 
-
 class RecipeRequest(BaseModel):
     session_id: str
     ingredients: List[str]
     dietary_preferences: DietaryPreferences
     recipe_type: str  # "related" or "custom"
-
 
 class CookingStep(BaseModel):
     step_number: int
@@ -194,7 +183,6 @@ class CookingStep(BaseModel):
     ingredients_used: List[str] = []
     equipment: List[str] = []
 
-
 class NutritionInfo(BaseModel):
     calories: Optional[int] = None
     protein: Optional[float] = None
@@ -202,7 +190,6 @@ class NutritionInfo(BaseModel):
     carbohydrates: Optional[float] = None
     fiber: Optional[float] = None
     sugar: Optional[float] = None
-
 
 class Recipe(BaseModel):
     id: str
@@ -222,7 +209,6 @@ class Recipe(BaseModel):
     source_url: Optional[str] = None
     nutrition: Optional[NutritionInfo] = None
     cost_per_serving: Optional[float] = None
-
 
 class MongoDBManager:
     def __init__(self):
@@ -393,7 +379,6 @@ class MongoDBManager:
         raise pymongo.errors.ServerSelectionTimeoutError(
             "Database operation failed after all retries")
 
-
 # Global MongoDB manager instance
 mongo_manager = MongoDBManager()
 
@@ -446,8 +431,6 @@ INGREDIENT_CATEGORIES = {
 }
 
 # LLAMA API functions
-
-
 async def generate_recipe_with_llama(ingredients: List[str], dietary_preferences: DietaryPreferences) -> Optional[Dict]:
     """Generate recipe using Hugging Face Inference API with Mistral-7B"""
     try:
@@ -551,7 +534,6 @@ Required JSON Structure:
         logger.error(f"Unexpected error in API call: {str(e)}")
         return None
 
-
 def convert_llama_response_to_recipe(llama_response: Dict, ingredients: List[str], dietary_preferences: DietaryPreferences) -> Recipe:
     """Convert LLAMA API response to our Recipe model"""
     if not llama_response:
@@ -603,7 +585,6 @@ def convert_llama_response_to_recipe(llama_response: Dict, ingredients: List[str
         ]),
         nutrition=nutrition
     )
-
 
 def create_fallback_recipe(ingredients: List[str], dietary_preferences: DietaryPreferences) -> Recipe:
     """Create a structured fallback recipe when API is unavailable"""
@@ -702,7 +683,6 @@ def create_fallback_recipe(ingredients: List[str], dietary_preferences: DietaryP
         ]
     )
 
-
 async def generate_llama_recipe(ingredients: List[str], dietary_preferences: DietaryPreferences) -> Recipe:
     """Generate recipe using LLAMA API with fallback"""
     try:
@@ -714,9 +694,6 @@ async def generate_llama_recipe(ingredients: List[str], dietary_preferences: Die
         return create_fallback_recipe(ingredients, dietary_preferences)
 
 # Database safe operation handler
-
-
-# Database operation wrapper
 async def safe_db_operation(operation, *args, **kwargs):
     try:
         return await operation(*args, **kwargs)
@@ -728,24 +705,19 @@ async def safe_db_operation(operation, *args, **kwargs):
         raise HTTPException(status_code=500, detail="Database error")
 
 # API Routes
-
-
 @app.get("/")
 async def root():
     return {"message": "Pizza Generator API", "status": "running"}
 
-
 @app.get("/api/ingredients")
 async def get_ingredients():
     return {"categories": INGREDIENT_CATEGORIES}
-
 
 @app.get("/api/ingredients/{category}")
 async def get_ingredients_by_category(category: str):
     if category not in INGREDIENT_CATEGORIES:
         raise HTTPException(status_code=404, detail="Category not found")
     return {"category": category, "ingredients": INGREDIENT_CATEGORIES[category]}
-
 
 @app.post("/api/check-conflicts")
 async def check_conflicts(ingredients: List[str], dietary_preferences: DietaryPreferences):
@@ -771,7 +743,6 @@ async def check_conflicts(ingredients: List[str], dietary_preferences: DietaryPr
         } for i in non_vegan_ingredients)
 
     return {"conflicts": conflicts}
-
 
 @app.post("/api/find-related-recipes")
 async def find_related_recipes(ingredients: List[str]):
@@ -806,7 +777,6 @@ async def find_related_recipes(ingredients: List[str]):
     related.sort(key=lambda x: x["match_count"], reverse=True)
     return {"related_recipes": related[:5]}
 
-
 # Updated FastAPI startup event
 @app.on_event("startup")
 async def startup_db_client():
@@ -818,9 +788,7 @@ async def startup_db_client():
         logger.error(f"Failed to initialize MongoDB connection: {e}")
         raise
 
-
 # Updated generate_recipe endpoint with fixed DB operations
-# Example route using the safe wrapper
 @app.post("/api/generate-recipe")
 async def generate_recipe(request: RecipeRequest):
     try:
@@ -873,7 +841,6 @@ async def generate_recipe(request: RecipeRequest):
         logger.error(f"Unexpected error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-
 @app.get("/api/recipe/{recipe_id}")
 async def get_recipe(recipe_id: str):
     recipe = await safe_db_operation(
@@ -885,7 +852,6 @@ async def get_recipe(recipe_id: str):
     recipe.pop("_id", None)
     return {"recipe": recipe}
 
-
 @app.get("/api/recipes/session/{session_id}")
 async def get_session_recipes(session_id: str):
     recipes = []
@@ -894,7 +860,6 @@ async def get_session_recipes(session_id: str):
         recipe.pop("_id", None)
         recipes.append(recipe)
     return {"recipes": recipes}
-
 
 @app.post("/api/save-cooking-progress")
 async def save_cooking_progress(session_id: str, step_number: int, completed: bool):
@@ -914,7 +879,6 @@ async def save_cooking_progress(session_id: str, step_number: int, completed: bo
 
     return {"status": "progress_saved"}
 
-
 @app.get("/api/cooking-progress/{session_id}")
 async def get_cooking_progress(session_id: str):
     session = await safe_db_operation(
@@ -922,7 +886,6 @@ async def get_cooking_progress(session_id: str):
         {"session_id": session_id}
     )
     return {"progress": session.get("cooking_progress", {})} if session else {"progress": {}}
-
 
 @app.post("/api/remove-ingredient")
 async def remove_ingredient(session_id: str, ingredient: str):
@@ -953,7 +916,6 @@ async def remove_ingredient(session_id: str, ingredient: str):
         raise HTTPException(
             status_code=500, detail=f"Failed to remove ingredient: {str(e)}"
         )
-
 
 @app.post("/api/validate-recipe")
 async def validate_recipe(recipe: Recipe):
