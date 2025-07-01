@@ -748,6 +748,10 @@ elif response.status_code == 429:  # Rate limiting
         logger.error(f"Failed to initialize MongoDB connection: {e}")
         # Don't raise - let the app start and handle connection issues per request
         pass
+                    async def startup():
+                        logger.info("Starting Pizza Generator API")
+                        logger.info(f"Using model: {os.getenv('LLAMA_MODEL')}")
+                        logger.info(f"API base URL: {LLAMA_API_BASE_URL}")
 
                     # Updated generate_recipe endpoint with proper error handling
 
