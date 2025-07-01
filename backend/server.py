@@ -23,9 +23,6 @@ import pymongo
 import certifi
 import ssl
 
-# Load environment variables first
-load_dotenv()
-
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
