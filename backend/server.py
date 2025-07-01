@@ -46,6 +46,7 @@ app.add_middleware(
 
 # Add OPTIONS handler
 
+
 @app.options("/{path:path}")
 async def options_handler():
     return {"message": "OK"}
@@ -57,7 +58,7 @@ if not LLAMA_API_KEY:
     raise ValueError("LLAMA_API_KEY is required")
 
 # MongoDB URL (defaulting to localhost)
-MONGO_URL = os.environ.get("MONGO_URL", "mongodb://localhost:27017")
+MONGO_URL = os.environ.get("MONGO_URL")
 
 # Correct Hugging Face inference API base URL for Mistral
 LLAMA_API_BASE_URL = os.environ.get(
@@ -325,7 +326,7 @@ Important:
         headers = {
             "Authorization": f"Bearer {LLAMA_API_KEY}",
             "Content-Type": "application/json",
-            "HTTP-Referer": "http://localhost:3000",
+            "HTTP-Referer": "https://ai-pizza-generator.vercel.app",
             "X-Title": "ai-pizza-generator"
         }
 
@@ -643,12 +644,116 @@ async def find_related_recipes(ingredients: List[str]):
     related.sort(key=lambda x: x["match_count"], reverse=True)
     return {"related_recipes": related[:5]}
 
+# MongoDB URL (use environment variable with fallback)
+MONGO_URL = os.environ.get("MONGODB_URI")
+
+# Database connection with retry logic
+
+
+async def get_db():
+    max_retries = 3
+    retry_delay = 2  # seconds
+
+    for attempt in range(max_retries):
+        try:
+            client = AsyncIOMotorClient(
+                MONGO_URL, serverSelectionTimeoutMS=5000)
+            await client.server_info()  # Test connection
+            db = client.get_database("pizza_generator")
+            logger.info("MongoDB connection established")
+            return db
+        except Exception as e:
+            logger.warning(
+                f"Attempt {attempt + 1} failed to connect to MongoDB: {e}")
+            if attempt < max_retries - 1:
+                await asyncio.sleep(retry_delay)
+            else:
+                logger.error(
+                    "Max retries reached, could not connect to MongoDB")
+                raise
+
+# MongoDB Configuration
+MONGO_URI = os.environ.get("MONGODB_URI")  # Get from environment variables
+if not MONGO_URI:
+    raise ValueError("MONGODB_URI environment variable not set")
+
+# Configure MongoDB client with proper timeout settings
+client = AsyncIOMotorClient(
+    MONGO_URI,
+    serverSelectionTimeoutMS=5000,  # 5 seconds timeout for server selection
+    connectTimeoutMS=10000,         # 10 seconds timeout for connection
+    socketTimeoutMS=30000           # 30 seconds timeout for operations
+)
+
+# Database and collections
+db = client.get_database("pizza_generator")  # Use your database name
+recipes_collection = db.recipes
+sessions_collection = db.user_sessions
+
+# Test the connection on startup
+
+
+async def test_db_connection():
+    try:
+        await client.server_info()
+        logger.info("Successfully connected to MongoDB Atlas")
+    except Exception as e:
+        logger.error(f"Failed to connect to MongoDB Atlas: {e}")
+        raise
+
+# Call this during startup
+
+
+async def safe_db_operation(operation, *args, **kwargs):
+    try:
+        return await operation(*args, **kwargs)
+    except pymongo.errors.ServerSelectionTimeoutError as e:
+        logger.error(f"Database timeout: {e}")
+        raise HTTPException(
+            status_code=503,
+            detail="Database operation timed out"
+        )
+    except pymongo.errors.NetworkTimeout as e:
+        logger.error(f"Network timeout: {e}")
+        raise HTTPException(
+            status_code=503,
+            detail="Network operation timed out"
+        )
+    except Exception as e:
+        logger.error(f"Database operation failed: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Database operation failed"
+        )
+
+# Use it like this:
+await safe_db_operation(
+    sessions_collection.update_one,
+    {"session_id": request.session_id},
+    {"$set": session_data},
+    upsert=True
+)
+
+
+@app.on_event("startup")
+async def startup_db_client():
+    await test_db_connection()
+
 
 @app.post("/api/generate-recipe")
 async def generate_recipe(request: RecipeRequest):
-    """Generate custom recipe using LLAMA API"""
     try:
         logger.info(f"Received generate recipe request: {request}")
+
+        # Ensure we have a valid database connection
+        try:
+            await client.server_info()
+        except Exception as e:
+            logger.error(f"Database connection lost: {e}")
+            raise HTTPException(
+                status_code=503,
+                detail="Database service temporarily unavailable"
+            )
 
         # 🧠 Ensure dietary_preferences are serializable
         if hasattr(request.dietary_preferences, "model_dump"):
