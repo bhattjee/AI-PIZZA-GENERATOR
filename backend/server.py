@@ -23,13 +23,6 @@ import pymongo
 import certifi
 import ssl
 
-# Add this right after the imports
-global client, db, recipes_collection, sessions_collection
-client = None
-db = None
-recipes_collection = None
-sessions_collection = None
-
 # Load environment variables
 load_dotenv()
 
@@ -85,6 +78,8 @@ logger.info(
 # Initialize MongoDB connection
 def get_mongo_client():
     """Initialize MongoDB client with proper error handling"""
+    global client, db, recipes_collection, sessions_collection  # Declare as global first
+    
     try:
         # Initialize connection
         temp_client = AsyncIOMotorClient(
@@ -100,7 +95,6 @@ def get_mongo_client():
         )
 
         # Assign to global variables
-        global client, db, recipes_collection, sessions_collection
         client = temp_client
         db = client.pizza_generator
         recipes_collection = db.recipes
@@ -110,6 +104,12 @@ def get_mongo_client():
     except Exception as e:
         logger.error(f"Failed to configure MongoDB client: {e}")
         raise
+
+# Initialize global variables
+client = None
+db = None
+recipes_collection = None
+sessions_collection = None
 
 # Global MongoDB client
 try:
