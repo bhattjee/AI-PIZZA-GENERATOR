@@ -23,6 +23,13 @@ import pymongo
 import certifi
 import ssl
 
+# Add this right after the imports
+global client, db, recipes_collection, sessions_collection
+client = None
+db = None
+recipes_collection = None
+sessions_collection = None
+
 # Load environment variables
 load_dotenv()
 
@@ -70,30 +77,42 @@ if not MONGO_URI:
     raise ValueError("MONGODB_URI environment variable not set")
 
 if any(x in MONGO_URI for x in ["localhost", "127.0.0.1"]):
-    raise ValueError("MongoDB URI points to localhost - should be Atlas cluster")
-logger.info(f"Connecting to MongoDB at: {MONGO_URI.split('@')[-1].split('/')[0]}")
+    raise ValueError(
+        "MongoDB URI points to localhost - should be Atlas cluster")
+logger.info(
+    f"Connecting to MongoDB at: {MONGO_URI.split('@')[-1].split('/')[0]}")
 
 # Initialize MongoDB connection
+
+
 def get_mongo_client():
-    try:
-        # Log the first part of the URI (without credentials)
-        logger.info(f"Connecting to MongoDB at: {MONGO_URI.split('@')[-1].split('/')[0]}")
-        
-        client = AsyncIOMotorClient(
-            MONGO_URI,
-            tls=True,
-            tlsCAFile=certifi.where(),
-            connectTimeoutMS=10000,
-            socketTimeoutMS=30000,
-            serverSelectionTimeoutMS=10000,
-            maxPoolSize=10,
-            retryWrites=True,
-            retryReads=True
-        )
-        return client
-    except Exception as e:
-        logger.error(f"Failed to create MongoDB client: {e}")
-        raise
+
+
+    # Replace the existing connection code with this:
+try:
+    # Initialize connection
+    temp_client = AsyncIOMotorClient(
+        MONGO_URI,
+        tls=True,
+        tlsCAFile=certifi.where(),
+        connectTimeoutMS=10000,
+        socketTimeoutMS=30000,
+        serverSelectionTimeoutMS=10000,
+        maxPoolSize=10,
+        retryWrites=True,
+        retryReads=True
+    )
+
+    # Assign to global variables
+    global client, db, recipes_collection, sessions_collection
+    client = temp_client
+    db = client.pizza_generator
+    recipes_collection = db.recipes
+    sessions_collection = db.user_sessions
+    logger.info("MongoDB client configured successfully")
+except Exception as e:
+    logger.error(f"Failed to configure MongoDB client: {e}")
+    raise
 
 # Global MongoDB client
 try:
@@ -122,6 +141,7 @@ async def global_exception_handler(request: Request, exc: Exception):
     )
 
 # Health check endpoint
+
 
 @app.get("/health")
 async def health_check():
@@ -203,26 +223,28 @@ class Recipe(BaseModel):
     nutrition: Optional[NutritionInfo] = None
     cost_per_serving: Optional[float] = None
 
+
 class MongoDBManager:
     def __init__(self):
         self.client = None
         self.db = None
         self.recipes_collection = None
         self.sessions_collection = None
-        
+
     async def connect(self):
         """Establish MongoDB connection with robust error handling"""
-        MONGO_URI = os.environ.get("MONGODB_URI") or os.environ.get("MONGO_URL")
+        MONGO_URI = os.environ.get(
+            "MONGODB_URI") or os.environ.get("MONGO_URL")
         if not MONGO_URI:
             raise ValueError("MONGODB_URI environment variable not set")
-        
+
         # Parse and reconstruct URI if needed
         if "mongodb+srv://" in MONGO_URI:
             # For MongoDB Atlas, ensure proper SSL parameters
             if "ssl=true" not in MONGO_URI and "tls=true" not in MONGO_URI:
                 separator = "&" if "?" in MONGO_URI else "?"
                 MONGO_URI += f"{separator}ssl=true&tlsAllowInvalidCertificates=false"
-        
+
         connection_params = {
             # Core connection settings
             "connectTimeoutMS": 30000,  # Increased timeout
@@ -232,99 +254,105 @@ class MongoDBManager:
             "minPoolSize": 1,
             "maxIdleTimeMS": 45000,
             "waitQueueTimeoutMS": 10000,
-            
+
             # SSL/TLS settings - FIXED
             "tls": True,
             "tlsCAFile": certifi.where(),
             "tlsAllowInvalidCertificates": False,
             "tlsAllowInvalidHostnames": False,
-            
+
             # Retry settings
             "retryWrites": True,
             "retryReads": True,
-            
+
             # Read/Write concerns
             "w": "majority",
             "readPreference": "primary",
-            
+
             # Heartbeat settings
             "heartbeatFrequencyMS": 10000,
-            
+
             # Connection management
             "maxConnecting": 2,
         }
-        
+
         max_retries = 5
         retry_delay = 2
-        
+
         for attempt in range(max_retries):
             try:
-                logger.info(f"Attempting MongoDB connection (attempt {attempt + 1}/{max_retries})")
-                
+                logger.info(
+                    f"Attempting MongoDB connection (attempt {attempt + 1}/{max_retries})")
+
                 # Create client with connection parameters
-                self.client = AsyncIOMotorClient(MONGO_URI, **connection_params)
-                
+                self.client = AsyncIOMotorClient(
+                    MONGO_URI, **connection_params)
+
                 # Test connection with admin command
                 await asyncio.wait_for(
-                    self.client.admin.command('ping'), 
+                    self.client.admin.command('ping'),
                     timeout=15.0
                 )
-                
+
                 # Initialize database and collections
                 self.db = self.client.pizza_generator
                 self.recipes_collection = self.db.recipes
                 self.sessions_collection = self.db.user_sessions
-                
-                logger.info(f"MongoDB connection established successfully (attempt {attempt + 1})")
+
+                logger.info(
+                    f"MongoDB connection established successfully (attempt {attempt + 1})")
                 return self.client
-                
+
             except asyncio.TimeoutError:
                 logger.warning(f"Connection attempt {attempt + 1} timed out")
                 if self.client:
                     self.client.close()
                     self.client = None
-                    
+
             except pymongo.errors.ServerSelectionTimeoutError as e:
-                logger.warning(f"Server selection timeout on attempt {attempt + 1}: {str(e)[:200]}...")
+                logger.warning(
+                    f"Server selection timeout on attempt {attempt + 1}: {str(e)[:200]}...")
                 if self.client:
                     self.client.close()
                     self.client = None
-                    
+
             except pymongo.errors.ConfigurationError as e:
                 logger.error(f"MongoDB configuration error: {e}")
                 raise  # Don't retry configuration errors
-                
+
             except ssl.SSLError as e:
                 logger.warning(f"SSL error on attempt {attempt + 1}: {e}")
                 if self.client:
                     self.client.close()
                     self.client = None
-                    
+
             except Exception as e:
-                logger.warning(f"Unexpected error on attempt {attempt + 1}: {str(e)[:200]}...")
+                logger.warning(
+                    f"Unexpected error on attempt {attempt + 1}: {str(e)[:200]}...")
                 if self.client:
                     self.client.close()
                     self.client = None
-            
+
             # Wait before retry (except on last attempt)
             if attempt < max_retries - 1:
                 wait_time = retry_delay * (2 ** attempt)  # Exponential backoff
                 logger.info(f"Waiting {wait_time}s before retry...")
                 await asyncio.sleep(wait_time)
-        
+
         logger.error("All MongoDB connection attempts failed")
-        raise pymongo.errors.ServerSelectionTimeoutError("Failed to connect to MongoDB after all retries")
-    
+        raise pymongo.errors.ServerSelectionTimeoutError(
+            "Failed to connect to MongoDB after all retries")
+
     async def ensure_connection(self):
         """Ensure we have a valid connection, reconnect if needed"""
         if not self.client:
             await self.connect()
             return
-            
+
         try:
             # Quick ping to check connection
             await asyncio.wait_for(
-                self.client.admin.command('ping'), 
+                self.client.admin.command('ping'),
                 timeout=5.0
             )
         except (Exception, asyncio.TimeoutError):
@@ -332,22 +360,23 @@ class MongoDBManager:
             if self.client:
                 self.client.close()
             await self.connect()
-    
+
     async def safe_operation(self, operation, *args, **kwargs):
         """Execute database operation with automatic reconnection"""
         max_retries = 3
-        
+
         for attempt in range(max_retries):
             try:
                 await self.ensure_connection()
                 return await operation(*args, **kwargs)
-                
-            except (pymongo.errors.ServerSelectionTimeoutError, 
+
+            except (pymongo.errors.ServerSelectionTimeoutError,
                     pymongo.errors.NetworkTimeout,
                     pymongo.errors.AutoReconnect) as e:
-                
-                logger.warning(f"Database operation failed (attempt {attempt + 1}): {e}")
-                
+
+                logger.warning(
+                    f"Database operation failed (attempt {attempt + 1}): {e}")
+
                 if attempt < max_retries - 1:
                     # Force reconnection
                     if self.client:
@@ -356,12 +385,14 @@ class MongoDBManager:
                     await asyncio.sleep(1)
                 else:
                     raise
-                    
+
             except Exception as e:
                 logger.error(f"Unexpected database error: {e}")
                 raise
-        
-        raise pymongo.errors.ServerSelectionTimeoutError("Database operation failed after all retries")
+
+        raise pymongo.errors.ServerSelectionTimeoutError(
+            "Database operation failed after all retries")
+
 
 # Global MongoDB manager instance
 mongo_manager = MongoDBManager()
@@ -698,6 +729,7 @@ async def safe_db_operation(operation, *args, **kwargs):
 
 # API Routes
 
+
 @app.get("/")
 async def root():
     return {"message": "Pizza Generator API", "status": "running"}
@@ -780,8 +812,8 @@ async def find_related_recipes(ingredients: List[str]):
 async def startup_db_client():
     """Initialize MongoDB connection on startup"""
     try:
-        await mongo_manager.connect()
-        logger.info("MongoDB connection initialized successfully")
+        await client.admin.command('ping')
+        logger.info("Successfully connected to MongoDB")
     except Exception as e:
         logger.error(f"Failed to initialize MongoDB connection: {e}")
         raise
