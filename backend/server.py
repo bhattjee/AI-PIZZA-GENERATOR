@@ -10,6 +10,7 @@ import datetime
 import requests
 import json
 import uuid
+from urllib.parse import quote_plus
 from datetime import datetime
 import pandas as pd
 from io import StringIO
@@ -165,10 +166,15 @@ async def global_exception_handler(request: Request, exc: Exception):
 # Health check endpoint
 
 
+# Health check with proper connection testing
 @app.get("/health")
 async def health_check():
     try:
-        await client.admin.command('ping')  # Test DB connection
+        await mongo_manager.ensure_connection()
+        await asyncio.wait_for(
+            mongo_manager.client.admin.command('ping'), 
+            timeout=5.0
+        )
         return {"status": "healthy", "database": "connected"}
     except Exception as e:
         logger.error(f"Health check failed: {e}")
@@ -237,6 +243,168 @@ class Recipe(BaseModel):
     nutrition: Optional[NutritionInfo] = None
     cost_per_serving: Optional[float] = None
 
+class MongoDBManager:
+    def __init__(self):
+        self.client = None
+        self.db = None
+        self.recipes_collection = None
+        self.sessions_collection = None
+        
+    async def connect(self):
+        """Establish MongoDB connection with robust error handling"""
+        MONGO_URI = os.environ.get("MONGODB_URI") or os.environ.get("MONGO_URL")
+        if not MONGO_URI:
+            raise ValueError("MONGODB_URI environment variable not set")
+        
+        # Parse and reconstruct URI if needed
+        if "mongodb+srv://" in MONGO_URI:
+            # For MongoDB Atlas, ensure proper SSL parameters
+            if "ssl=true" not in MONGO_URI and "tls=true" not in MONGO_URI:
+                separator = "&" if "?" in MONGO_URI else "?"
+                MONGO_URI += f"{separator}ssl=true&tlsAllowInvalidCertificates=false"
+        
+        connection_params = {
+            # Core connection settings
+            "connectTimeoutMS": 30000,  # Increased timeout
+            "socketTimeoutMS": 30000,
+            "serverSelectionTimeoutMS": 30000,  # Increased timeout
+            "maxPoolSize": 10,
+            "minPoolSize": 1,
+            "maxIdleTimeMS": 45000,
+            "waitQueueTimeoutMS": 10000,
+            
+            # SSL/TLS settings - FIXED
+            "tls": True,
+            "tlsCAFile": certifi.where(),
+            "tlsAllowInvalidCertificates": False,
+            "tlsAllowInvalidHostnames": False,
+            
+            # Retry settings
+            "retryWrites": True,
+            "retryReads": True,
+            
+            # Read/Write concerns
+            "w": "majority",
+            "readPreference": "primary",
+            
+            # Heartbeat settings
+            "heartbeatFrequencyMS": 10000,
+            
+            # Connection management
+            "maxConnecting": 2,
+        }
+        
+        max_retries = 5
+        retry_delay = 2
+        
+        for attempt in range(max_retries):
+            try:
+                logger.info(f"Attempting MongoDB connection (attempt {attempt + 1}/{max_retries})")
+                
+                # Create client with connection parameters
+                self.client = AsyncIOMotorClient(MONGO_URI, **connection_params)
+                
+                # Test connection with admin command
+                await asyncio.wait_for(
+                    self.client.admin.command('ping'), 
+                    timeout=15.0
+                )
+                
+                # Initialize database and collections
+                self.db = self.client.pizza_generator
+                self.recipes_collection = self.db.recipes
+                self.sessions_collection = self.db.user_sessions
+                
+                logger.info(f"MongoDB connection established successfully (attempt {attempt + 1})")
+                return self.client
+                
+            except asyncio.TimeoutError:
+                logger.warning(f"Connection attempt {attempt + 1} timed out")
+                if self.client:
+                    self.client.close()
+                    self.client = None
+                    
+            except pymongo.errors.ServerSelectionTimeoutError as e:
+                logger.warning(f"Server selection timeout on attempt {attempt + 1}: {str(e)[:200]}...")
+                if self.client:
+                    self.client.close()
+                    self.client = None
+                    
+            except pymongo.errors.ConfigurationError as e:
+                logger.error(f"MongoDB configuration error: {e}")
+                raise  # Don't retry configuration errors
+                
+            except ssl.SSLError as e:
+                logger.warning(f"SSL error on attempt {attempt + 1}: {e}")
+                if self.client:
+                    self.client.close()
+                    self.client = None
+                    
+            except Exception as e:
+                logger.warning(f"Unexpected error on attempt {attempt + 1}: {str(e)[:200]}...")
+                if self.client:
+                    self.client.close()
+                    self.client = None
+            
+            # Wait before retry (except on last attempt)
+            if attempt < max_retries - 1:
+                wait_time = retry_delay * (2 ** attempt)  # Exponential backoff
+                logger.info(f"Waiting {wait_time}s before retry...")
+                await asyncio.sleep(wait_time)
+        
+        logger.error("All MongoDB connection attempts failed")
+        raise pymongo.errors.ServerSelectionTimeoutError("Failed to connect to MongoDB after all retries")
+    
+    async def ensure_connection(self):
+        """Ensure we have a valid connection, reconnect if needed"""
+        if not self.client:
+            await self.connect()
+            return
+            
+        try:
+            # Quick ping to check connection
+            await asyncio.wait_for(
+                self.client.admin.command('ping'), 
+                timeout=5.0
+            )
+        except (Exception, asyncio.TimeoutError):
+            logger.warning("Lost MongoDB connection, reconnecting...")
+            if self.client:
+                self.client.close()
+            await self.connect()
+    
+    async def safe_operation(self, operation, *args, **kwargs):
+        """Execute database operation with automatic reconnection"""
+        max_retries = 3
+        
+        for attempt in range(max_retries):
+            try:
+                await self.ensure_connection()
+                return await operation(*args, **kwargs)
+                
+            except (pymongo.errors.ServerSelectionTimeoutError, 
+                    pymongo.errors.NetworkTimeout,
+                    pymongo.errors.AutoReconnect) as e:
+                
+                logger.warning(f"Database operation failed (attempt {attempt + 1}): {e}")
+                
+                if attempt < max_retries - 1:
+                    # Force reconnection
+                    if self.client:
+                        self.client.close()
+                        self.client = None
+                    await asyncio.sleep(1)
+                else:
+                    raise
+                    
+            except Exception as e:
+                logger.error(f"Unexpected database error: {e}")
+                raise
+        
+        raise pymongo.errors.ServerSelectionTimeoutError("Database operation failed after all retries")
+
+# Global MongoDB manager instance
+mongo_manager = MongoDBManager()
 
 # Ingredient categories data
 INGREDIENT_CATEGORIES = {
@@ -653,42 +821,25 @@ async def find_related_recipes(ingredients: List[str]):
     return {"related_recipes": related[:5]}
 
 
+# Updated FastAPI startup event
 @app.on_event("startup")
 async def startup_db_client():
+    """Initialize MongoDB connection on startup"""
     try:
-        # Test the connection with more robust ping
-        await client.admin.command('ping', socketTimeoutMS=10000)
-        logger.info("Successfully connected to MongoDB Atlas")
+        await mongo_manager.connect()
+        logger.info("MongoDB connection initialized successfully")
     except Exception as e:
-        logger.error(f"Failed initial connection to MongoDB Atlas: {e}")
-        # Try to get a new connection with retry logic
-        try:
-            global client, db, recipes_collection, sessions_collection
-            client = await get_mongo_client()
-            db = client.pizza_generator
-            recipes_collection = db.recipes
-            sessions_collection = db.user_sessions
-            logger.info("Reconnected to MongoDB successfully")
-        except Exception as e:
-            logger.error(f"Failed to reconnect to MongoDB: {e}")
-            raise
+        logger.error(f"Failed to initialize MongoDB connection: {e}")
+        raise
 
 
+# Updated generate_recipe endpoint with fixed DB operations
 @app.post("/api/generate-recipe")
 async def generate_recipe(request: RecipeRequest):
     try:
         logger.info(f"Received generate recipe request: {request}")
 
-        # Ensure we have a valid database connection
-        try:
-            await client.admin.command('ping')
-        except Exception as e:
-            logger.error(f"Database connection lost: {e}")
-            client = await get_mongo_client()
-            db = client.pizza_generator
-            recipes_collection = db.recipes
-            sessions_collection = db.user_sessions
-
+        # Use the safe database operations
         dietary_preferences_data = request.dietary_preferences.model_dump() \
             if hasattr(request.dietary_preferences, "model_dump") \
             else request.dietary_preferences
@@ -700,8 +851,9 @@ async def generate_recipe(request: RecipeRequest):
             "timestamp": datetime.now(timezone.utc).isoformat()
         }
 
-        await safe_db_operation(
-            sessions_collection.update_one,
+        # Use safe operation wrapper
+        await mongo_manager.safe_operation(
+            mongo_manager.sessions_collection.update_one,
             {"session_id": request.session_id},
             {"$set": session_data},
             upsert=True
@@ -720,8 +872,8 @@ async def generate_recipe(request: RecipeRequest):
         })
 
         try:
-            await safe_db_operation(
-                recipes_collection.insert_one,
+            await mongo_manager.safe_operation(
+                mongo_manager.recipes_collection.insert_one,
                 recipe_data
             )
         except Exception as e:
@@ -740,8 +892,7 @@ async def generate_recipe(request: RecipeRequest):
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(
-            f"Unexpected error in generate-recipe: {str(e)}", exc_info=True)
+        logger.error(f"Unexpected error in generate-recipe: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=500,
             detail=f"An unexpected error occurred: {str(e)}"
