@@ -59,6 +59,12 @@ MONGO_URI = os.environ.get("MONGODB_URI") or os.environ.get("MONGO_URL")
 if not MONGO_URI:
     raise ValueError("MONGODB_URI environment variable not set")
 
+# Verify MongoDB URI is correct
+if "localhost" in MONGO_URI or "127.0.0.1" in MONGO_URI:
+    raise ValueError("Invalid MongoDB URI - should point to Atlas cluster, not localhost")
+
+logger.info(f"Connecting to MongoDB with URI: {MONGO_URI[:MONGO_URI.find('@')+1]}...")
+
 # Correct Hugging Face inference API base URL for Mistral
 LLAMA_API_BASE_URL = os.environ.get(
     "LLAMA_API_BASE_URL",
@@ -165,23 +171,27 @@ async def global_exception_handler(request: Request, exc: Exception):
 
 # Health check endpoint
 
-
-# Health check with proper connection testing
 @app.get("/health")
 async def health_check():
     try:
-        await mongo_manager.ensure_connection()
-        await asyncio.wait_for(
-            mongo_manager.client.admin.command('ping'), 
-            timeout=5.0
-        )
+        await client.admin.command('ping', socketTimeoutMS=5000)
         return {"status": "healthy", "database": "connected"}
     except Exception as e:
         logger.error(f"Health check failed: {e}")
-        return JSONResponse(
-            status_code=500,
-            content={"status": "unhealthy", "error": str(e)},
-        )
+        # Try to reconnect
+        try:
+            global client, db, recipes_collection, sessions_collection
+            client = await get_mongo_client()
+            db = client.pizza_generator
+            recipes_collection = db.recipes
+            sessions_collection = db.user_sessions
+            return {"status": "reconnected", "database": "connected"}
+        except Exception as e:
+            return JSONResponse(
+                status_code=500,
+                content={"status": "unhealthy", "error": str(e)},
+            )
+
 
 # Pydantic models
 
