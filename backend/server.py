@@ -20,6 +20,7 @@ from datetime import timezone
 import asyncio
 import pymongo
 import certifi
+import ssl
 
 # Load environment variables
 load_dotenv()
@@ -66,18 +67,25 @@ LLAMA_API_BASE_URL = os.environ.get(
 # Request timeout setting
 LLAMA_TIMEOUT = 30  # seconds
 
+# Create custom SSL context
+ssl_context = ssl.create_default_context(cafile=certifi.where())
+ssl_context.check_hostname = False
+ssl_context.verify_mode = ssl.CERT_REQUIRED
+
 # MongoDB Connection Configuration
+
+
 async def get_mongo_client():
     max_retries = 3
     retry_delay = 2  # seconds
-    
+
     for attempt in range(max_retries):
         try:
             client = AsyncIOMotorClient(
                 MONGO_URI,
                 tls=True,
-                tlsCAFile=certifi.where(),  # Use certifi's CA bundle
-                tlsAllowInvalidCertificates=False,  # Strict certificate validation
+                tlsCAFile=certifi.where(),
+                tlsAllowInvalidCertificates=False,
                 retryWrites=True,
                 retryReads=True,
                 connectTimeoutMS=20000,
@@ -85,21 +93,27 @@ async def get_mongo_client():
                 serverSelectionTimeoutMS=10000,
                 maxPoolSize=10,
                 ssl=True,
-                ssl_cert_reqs=None,  # Let the driver handle cert requirements
-                directConnection=False  # Important for replica sets
+                ssl_cert_reqs=ssl.CERT_REQUIRED,
+                ssl_ca_certs=certifi.where(),
+                ssl_match_hostname=False,
+                directConnection=False,
+                tlsInsecure=False
             )
             await client.admin.command('ping')  # Test connection
-            logger.info(f"MongoDB connection established (attempt {attempt + 1})")
+            logger.info(
+                f"MongoDB connection established (attempt {attempt + 1})")
             return client
         except pymongo.errors.ServerSelectionTimeoutError as e:
-            logger.warning(f"Attempt {attempt + 1} failed (ServerSelectionTimeout): {e}")
+            logger.warning(
+                f"Attempt {attempt + 1} failed (ServerSelectionTimeout): {e}")
             if attempt < max_retries - 1:
                 await asyncio.sleep(retry_delay)
             else:
                 logger.error("Max retries reached for ServerSelectionTimeout")
                 raise
         except pymongo.errors.ConnectionFailure as e:
-            logger.warning(f"Attempt {attempt + 1} failed (ConnectionFailure): {e}")
+            logger.warning(
+                f"Attempt {attempt + 1} failed (ConnectionFailure): {e}")
             if attempt < max_retries - 1:
                 await asyncio.sleep(retry_delay)
             else:
@@ -123,8 +137,11 @@ try:
         serverSelectionTimeoutMS=10000,
         maxPoolSize=10,
         ssl=True,
-        ssl_cert_reqs=None,
-        directConnection=False
+        ssl_cert_reqs=ssl.CERT_REQUIRED,
+        ssl_ca_certs=certifi.where(),
+        ssl_match_hostname=False,
+        directConnection=False,
+        tlsInsecure=False
     )
     db = client.pizza_generator
     recipes_collection = db.recipes
@@ -135,6 +152,8 @@ except Exception as e:
     raise
 
 # Global exception handler
+
+
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     logger.error(f"Unhandled exception: {exc}")
@@ -144,6 +163,8 @@ async def global_exception_handler(request: Request, exc: Exception):
     )
 
 # Health check endpoint
+
+
 @app.get("/health")
 async def health_check():
     try:
@@ -157,9 +178,12 @@ async def health_check():
         )
 
 # Pydantic models
+
+
 class IngredientSelection(BaseModel):
     category: str
     ingredients: List[str]
+
 
 class DietaryPreferences(BaseModel):
     diet_types: List[str] = []
@@ -167,11 +191,13 @@ class DietaryPreferences(BaseModel):
     spice_level: int = 0  # 0-4 scale
     allergen_avoidance: List[str] = []
 
+
 class RecipeRequest(BaseModel):
     session_id: str
     ingredients: List[str]
     dietary_preferences: DietaryPreferences
     recipe_type: str  # "related" or "custom"
+
 
 class CookingStep(BaseModel):
     step_number: int
@@ -182,6 +208,7 @@ class CookingStep(BaseModel):
     ingredients_used: List[str] = []
     equipment: List[str] = []
 
+
 class NutritionInfo(BaseModel):
     calories: Optional[int] = None
     protein: Optional[float] = None
@@ -189,6 +216,7 @@ class NutritionInfo(BaseModel):
     carbohydrates: Optional[float] = None
     fiber: Optional[float] = None
     sugar: Optional[float] = None
+
 
 class Recipe(BaseModel):
     id: str
@@ -208,6 +236,7 @@ class Recipe(BaseModel):
     source_url: Optional[str] = None
     nutrition: Optional[NutritionInfo] = None
     cost_per_serving: Optional[float] = None
+
 
 # Ingredient categories data
 INGREDIENT_CATEGORIES = {
@@ -258,6 +287,8 @@ INGREDIENT_CATEGORIES = {
 }
 
 # LLAMA API functions
+
+
 async def generate_recipe_with_llama(ingredients: List[str], dietary_preferences: DietaryPreferences) -> Optional[Dict]:
     """Generate recipe using Hugging Face Inference API with Mistral-7B"""
     try:
@@ -341,8 +372,10 @@ Required JSON Structure:
 
         if response.status_code == 200:
             try:
-                response_text = response.json()["choices"][0]["message"]["content"]
-                clean_json = response_text.replace('```json', '').replace('```', '').strip()
+                response_text = response.json(
+                )["choices"][0]["message"]["content"]
+                clean_json = response_text.replace(
+                    '```json', '').replace('```', '').strip()
                 recipe_data = json.loads(clean_json)
                 return recipe_data
             except (json.JSONDecodeError, KeyError) as e:
@@ -358,6 +391,7 @@ Required JSON Structure:
     except Exception as e:
         logger.error(f"Unexpected error in API call: {str(e)}")
         return None
+
 
 def convert_llama_response_to_recipe(llama_response: Dict, ingredients: List[str], dietary_preferences: DietaryPreferences) -> Recipe:
     """Convert LLAMA API response to our Recipe model"""
@@ -391,15 +425,18 @@ def convert_llama_response_to_recipe(llama_response: Dict, ingredients: List[str
         id=str(uuid.uuid4()),
         name=llama_response.get("name", "Custom Pizza"),
         ingredients=llama_response.get("ingredients", ingredients),
-        dietary_info=llama_response.get("dietary_info", dietary_preferences.diet_types),
-        spice_level=llama_response.get("spice_level", dietary_preferences.spice_level),
+        dietary_info=llama_response.get(
+            "dietary_info", dietary_preferences.diet_types),
+        spice_level=llama_response.get(
+            "spice_level", dietary_preferences.spice_level),
         prep_time=llama_response.get("prep_time", 20),
         cook_time=llama_response.get("cook_time", 15),
         total_time=llama_response.get("total_time", 35),
         servings=llama_response.get("servings", 4),
         difficulty=llama_response.get("difficulty", "Medium"),
         steps=steps,
-        sauce_preparation=llama_response.get("sauce_preparation", ["Mix sauce ingredients and simmer for 10 minutes"]),
+        sauce_preparation=llama_response.get(
+            "sauce_preparation", ["Mix sauce ingredients and simmer for 10 minutes"]),
         tips=llama_response.get("tips", [
             "Preheat your oven for best results",
             "Let the dough rest before stretching",
@@ -408,15 +445,18 @@ def convert_llama_response_to_recipe(llama_response: Dict, ingredients: List[str
         nutrition=nutrition
     )
 
+
 def create_fallback_recipe(ingredients: List[str], dietary_preferences: DietaryPreferences) -> Recipe:
     """Create a structured fallback recipe when API is unavailable"""
-    has_meat = any(ingredient in INGREDIENT_CATEGORIES["meats"] for ingredient in ingredients)
-    has_veggies = any(ingredient in INGREDIENT_CATEGORIES["vegetables"] for ingredient in ingredients)
+    has_meat = any(
+        ingredient in INGREDIENT_CATEGORIES["meats"] for ingredient in ingredients)
+    has_veggies = any(
+        ingredient in INGREDIENT_CATEGORIES["vegetables"] for ingredient in ingredients)
 
     recipe_name = "Hearty Meat & Veggie Pizza" if has_meat and has_veggies else \
-                 "Savory Meat Lovers Pizza" if has_meat else \
-                 "Garden Fresh Veggie Pizza" if has_veggies else \
-                 "Custom Artisan Pizza"
+        "Savory Meat Lovers Pizza" if has_meat else \
+        "Garden Fresh Veggie Pizza" if has_veggies else \
+        "Custom Artisan Pizza"
 
     steps = [
         CookingStep(
@@ -503,6 +543,7 @@ def create_fallback_recipe(ingredients: List[str], dietary_preferences: DietaryP
         ]
     )
 
+
 async def generate_llama_recipe(ingredients: List[str], dietary_preferences: DietaryPreferences) -> Recipe:
     """Generate recipe using LLAMA API with fallback"""
     try:
@@ -514,33 +555,43 @@ async def generate_llama_recipe(ingredients: List[str], dietary_preferences: Die
         return create_fallback_recipe(ingredients, dietary_preferences)
 
 # Database safe operation handler
+
+
 async def safe_db_operation(operation, *args, **kwargs):
     try:
         return await operation(*args, **kwargs)
     except pymongo.errors.ServerSelectionTimeoutError as e:
         logger.error(f"Database timeout: {e}")
-        raise HTTPException(status_code=503, detail="Database operation timed out")
+        raise HTTPException(
+            status_code=503, detail="Database operation timed out")
     except pymongo.errors.NetworkTimeout as e:
         logger.error(f"Network timeout: {e}")
-        raise HTTPException(status_code=503, detail="Network operation timed out")
+        raise HTTPException(
+            status_code=503, detail="Network operation timed out")
     except Exception as e:
         logger.error(f"Database operation failed: {e}")
-        raise HTTPException(status_code=500, detail="Database operation failed")
+        raise HTTPException(
+            status_code=500, detail="Database operation failed")
 
 # API Routes
+
+
 @app.get("/")
 async def root():
     return {"message": "Pizza Generator API", "status": "running"}
 
+
 @app.get("/api/ingredients")
 async def get_ingredients():
     return {"categories": INGREDIENT_CATEGORIES}
+
 
 @app.get("/api/ingredients/{category}")
 async def get_ingredients_by_category(category: str):
     if category not in INGREDIENT_CATEGORIES:
         raise HTTPException(status_code=404, detail="Category not found")
     return {"category": category, "ingredients": INGREDIENT_CATEGORIES[category]}
+
 
 @app.post("/api/check-conflicts")
 async def check_conflicts(ingredients: List[str], dietary_preferences: DietaryPreferences):
@@ -556,7 +607,7 @@ async def check_conflicts(ingredients: List[str], dietary_preferences: DietaryPr
 
     if "vegan" in [d.lower() for d in dietary_preferences.diet_types]:
         non_vegan_ingredients = [
-            i for i in ingredients 
+            i for i in ingredients
             if any(meat in i.lower() for meat in ["cheese", "meat", "bacon", "ham", "pepperoni"])
         ]
         conflicts.extend({
@@ -566,6 +617,7 @@ async def check_conflicts(ingredients: List[str], dietary_preferences: DietaryPr
         } for i in non_vegan_ingredients)
 
     return {"conflicts": conflicts}
+
 
 @app.post("/api/find-related-recipes")
 async def find_related_recipes(ingredients: List[str]):
@@ -593,19 +645,23 @@ async def find_related_recipes(ingredients: List[str]):
         if match_count >= 2:
             recipe_copy = recipe.copy()
             recipe_copy["match_count"] = match_count
-            recipe_copy["match_percentage"] = round((match_count / len(recipe["ingredients"])) * 100)
+            recipe_copy["match_percentage"] = round(
+                (match_count / len(recipe["ingredients"])) * 100)
             related.append(recipe_copy)
 
     related.sort(key=lambda x: x["match_count"], reverse=True)
     return {"related_recipes": related[:5]}
 
+
 @app.on_event("startup")
 async def startup_db_client():
     try:
-        await client.admin.command('ping')
+        # Test the connection with more robust ping
+        await client.admin.command('ping', socketTimeoutMS=10000)
         logger.info("Successfully connected to MongoDB Atlas")
     except Exception as e:
-        logger.error(f"Failed to connect to MongoDB Atlas: {e}")
+        logger.error(f"Failed initial connection to MongoDB Atlas: {e}")
+        # Try to get a new connection with retry logic
         try:
             global client, db, recipes_collection, sessions_collection
             client = await get_mongo_client()
@@ -616,6 +672,7 @@ async def startup_db_client():
         except Exception as e:
             logger.error(f"Failed to reconnect to MongoDB: {e}")
             raise
+
 
 @app.post("/api/generate-recipe")
 async def generate_recipe(request: RecipeRequest):
@@ -683,11 +740,13 @@ async def generate_recipe(request: RecipeRequest):
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Unexpected error in generate-recipe: {str(e)}", exc_info=True)
+        logger.error(
+            f"Unexpected error in generate-recipe: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=500,
             detail=f"An unexpected error occurred: {str(e)}"
         )
+
 
 @app.get("/api/recipe/{recipe_id}")
 async def get_recipe(recipe_id: str):
@@ -700,6 +759,7 @@ async def get_recipe(recipe_id: str):
     recipe.pop("_id", None)
     return {"recipe": recipe}
 
+
 @app.get("/api/recipes/session/{session_id}")
 async def get_session_recipes(session_id: str):
     recipes = []
@@ -708,6 +768,7 @@ async def get_session_recipes(session_id: str):
         recipe.pop("_id", None)
         recipes.append(recipe)
     return {"recipes": recipes}
+
 
 @app.post("/api/save-cooking-progress")
 async def save_cooking_progress(session_id: str, step_number: int, completed: bool):
@@ -727,6 +788,7 @@ async def save_cooking_progress(session_id: str, step_number: int, completed: bo
 
     return {"status": "progress_saved"}
 
+
 @app.get("/api/cooking-progress/{session_id}")
 async def get_cooking_progress(session_id: str):
     session = await safe_db_operation(
@@ -734,6 +796,7 @@ async def get_cooking_progress(session_id: str):
         {"session_id": session_id}
     )
     return {"progress": session.get("cooking_progress", {})} if session else {"progress": {}}
+
 
 @app.post("/api/remove-ingredient")
 async def remove_ingredient(session_id: str, ingredient: str):
@@ -747,7 +810,8 @@ async def remove_ingredient(session_id: str, ingredient: str):
 
         current_ingredients = session.get("ingredients", [])
         if ingredient in current_ingredients:
-            updated_ingredients = [i for i in current_ingredients if i != ingredient]
+            updated_ingredients = [
+                i for i in current_ingredients if i != ingredient]
 
             await safe_db_operation(
                 sessions_collection.update_one,
@@ -763,6 +827,7 @@ async def remove_ingredient(session_id: str, ingredient: str):
         raise HTTPException(
             status_code=500, detail=f"Failed to remove ingredient: {str(e)}"
         )
+
 
 @app.post("/api/validate-recipe")
 async def validate_recipe(recipe: Recipe):
