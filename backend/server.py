@@ -23,6 +23,12 @@ import pymongo
 import certifi
 import ssl
 
+# Initialize global variables at the top level
+client = None
+db = None
+recipes_collection = None
+sessions_collection = None
+
 # Load environment variables
 load_dotenv()
 
@@ -75,11 +81,14 @@ if any(x in MONGO_URI for x in ["localhost", "127.0.0.1"]):
 logger.info(
     f"Connecting to MongoDB at: {MONGO_URI.split('@')[-1].split('/')[0]}")
 
-# Initialize MongoDB connection
-def get_mongo_client():
-    """Initialize MongoDB client with proper error handling"""
-    global client, db, recipes_collection, sessions_collection  # Declare as global first
+def initialize_mongodb():
+    """Initialize MongoDB connection and set global variables"""
+    global client, db, recipes_collection, sessions_collection
     
+    MONGO_URI = os.getenv("MONGODB_URI")
+    if not MONGO_URI:
+        raise ValueError("MONGODB_URI environment variable not set")
+
     try:
         # Initialize connection
         temp_client = AsyncIOMotorClient(
@@ -100,26 +109,16 @@ def get_mongo_client():
         recipes_collection = db.recipes
         sessions_collection = db.user_sessions
         logger.info("MongoDB client configured successfully")
-        return client
     except Exception as e:
         logger.error(f"Failed to configure MongoDB client: {e}")
         raise
 
-# Initialize global variables
-client = None
-db = None
-recipes_collection = None
-sessions_collection = None
-
-# Global MongoDB client
+# Initialize MongoDB connection when the module loads
 try:
-    client = get_mongo_client()
-    db = client.get_database("pizza_generator")
-    recipes_collection = db.recipes
-    sessions_collection = db.user_sessions
-    logger.info("MongoDB collections initialized")
+    initialize_mongodb()
 except Exception as e:
     logger.error(f"Failed to initialize MongoDB: {e}")
+    # You might want to handle this differently depending on your requirements
     raise
 
 # Create custom SSL context
