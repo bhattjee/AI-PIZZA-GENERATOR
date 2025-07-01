@@ -382,11 +382,17 @@ INGREDIENT_CATEGORIES = {
 
 
 async def generate_recipe_with_llama(ingredients: List[str], dietary_preferences: DietaryPreferences) -> Optional[Dict]:
-    """Generate recipe using Hugging Face Inference API with Mistral-7B"""
+    """Generate recipe using OpenRouter API"""
     try:
         if not LLAMA_API_KEY:
             logger.error("LLAMA_API_KEY not configured")
             return None
+
+        # Define model at the start
+        LLAMA_MODEL = os.environ.get(
+            "LLAMA_MODEL", 
+            "deepseek/deepseek-r1-0528-qwen3-8b:free"
+        )
 
         prompt = f"""Generate a detailed pizza recipe in strict JSON format with these requirements:
 
@@ -436,8 +442,7 @@ Required JSON Structure:
     "fat": 15
   }}
 }}"""
-LLAMA_MODEL = os.environ.get(
-    "LLAMA_MODEL", "deepseek/deepseek-r1-0528-qwen3-8b:free")
+
         payload = {
             "model": LLAMA_MODEL,
             "messages": [
@@ -451,53 +456,51 @@ LLAMA_MODEL = os.environ.get(
 
         headers = {
             "Authorization": f"Bearer {os.environ.get('LLAMA_API_KEY')}",
-            "HTTP-Referer": "https://ai-pizza-generator.vercel.app",  # Required by OpenRouter
-            "X-Title": "Pizzacraft-Key-M2",       # Optional but recommended
+            "HTTP-Referer": "https://ai-pizza-generator.vercel.app",
+            "X-Title": "Pizzacraft-Key-M2",
             "Content-Type": "application/json"
         }
 
         response = requests.post(
-            f"{LLAMA_API_BASE_URL}/chat/completions",  # Construct full URL
+            f"{LLAMA_API_BASE_URL}/chat/completions",
             headers=headers,
             json=payload,
-            timeout=LLAMA_TIMEOUT  # Missing in your current request
-            )
+            timeout=LLAMA_TIMEOUT
+        )
 
-if response.status_code == 401:  # Special handling for auth errors
-    logger.error("OpenRouter authentication failed. Check API key.")
-    return None
-elif response.status_code == 429:  # Rate limiting
-    logger.error("Rate limit exceeded. Please upgrade plan or wait.")
-    return None
-            if response.status_code == 200:
-            try:
-                response_text = response.json(
-               )["choices"][0]["message"]["content"]
-                    clean_json = response_text.replace(
-                   '```json', '').replace('```', '').strip()
-                    recipe_data = json.loads(clean_json)
-                    return recipe_data
-                    except (json.JSONDecodeError, KeyError) as e:
-                    logger.error(f"Failed to parse API response: {str(e)}")
-                    return None
-                    else:
-                    logger.error(
-                        f"API error {response.status_code}: {response.text}")
-                    return None
+        if response.status_code == 401:
+            logger.error("OpenRouter authentication failed. Check API key.")
+            return None
+        elif response.status_code == 429:
+            logger.error("Rate limit exceeded. Please upgrade plan or wait.")
+            return None
+        elif response.status_code != 200:
+            logger.error(f"API error {response.status_code}: {response.text}")
+            return None
 
-                    except requests.exceptions.Timeout:
-                    logger.error("API request timed out")
-                    return None
-                    except Exception as e:
-                    logger.error(f"Unexpected error in API call: {str(e)}")
-                    return None
+        try:
+            response_text = response.json()["choices"][0]["message"]["content"]
+            clean_json = response_text.replace('```json', '').replace('```', '').strip()
+            recipe_data = json.loads(clean_json)
+            return recipe_data
+        except (json.JSONDecodeError, KeyError) as e:
+            logger.error(f"Failed to parse API response: {str(e)}")
+            return None
 
-                    def convert_llama_response_to_recipe(llama_response: Dict, ingredients: List[str], dietary_preferences: DietaryPreferences) -> Recipe:
-                    """Convert LLAMA API response to our Recipe model"""
-                    if not llama_response:
-                    return create_fallback_recipe(ingredients, dietary_preferences)
+    except requests.exceptions.Timeout:
+        logger.error("API request timed out")
+        return None
+    except Exception as e:
+        logger.error(f"Unexpected error in API call: {str(e)}")
+        return None
 
-                    steps = []
+
+def convert_llama_response_to_recipe(llama_response: Dict, ingredients: List[str], dietary_preferences: DietaryPreferences) -> Recipe:
+    """Convert LLAMA API response to our Recipe model"""
+    if not llama_response:
+        return create_fallback_recipe(ingredients, dietary_preferences)
+
+    steps = []
     for step_data in llama_response.get("steps", []):
         step = CookingStep(
             step_number=step_data.get("step_number", 0),
@@ -508,10 +511,10 @@ elif response.status_code == 429:  # Rate limiting
             ingredients_used=step_data.get("ingredients_used", []),
             equipment=step_data.get("equipment", [])
         )
-            steps.append(step)
+        steps.append(step)
 
-        nutrition_data = llama_response.get("nutrition", {})
-        nutrition = NutritionInfo(
+    nutrition_data = llama_response.get("nutrition", {})
+    nutrition = NutritionInfo(
         calories=nutrition_data.get("calories"),
         protein=nutrition_data.get("protein"),
         fat=nutrition_data.get("fat"),
@@ -520,7 +523,7 @@ elif response.status_code == 429:  # Rate limiting
         sugar=nutrition_data.get("sugar")
     ) if nutrition_data else None
 
-        return Recipe(
+    return Recipe(
         id=str(uuid.uuid4()),
         name=llama_response.get("name", "Custom Pizza"),
         ingredients=llama_response.get("ingredients", ingredients),
@@ -544,19 +547,20 @@ elif response.status_code == 429:  # Rate limiting
         nutrition=nutrition
     )
 
-    def create_fallback_recipe(ingredients: List[str], dietary_preferences: DietaryPreferences) -> Recipe:
+
+def create_fallback_recipe(ingredients: List[str], dietary_preferences: DietaryPreferences) -> Recipe:
     """Create a structured fallback recipe when API is unavailable"""
     has_meat = any(
-       ingredient in INGREDIENT_CATEGORIES["meats"] for ingredient in ingredients)
-        has_veggies = any(
+        ingredient in INGREDIENT_CATEGORIES["meats"] for ingredient in ingredients)
+    has_veggies = any(
         ingredient in INGREDIENT_CATEGORIES["vegetables"] for ingredient in ingredients)
 
-        recipe_name = "Hearty Meat & Veggie Pizza" if has_meat and has_veggies else
-            "Savory Meat Lovers Pizza" if has_meat else
-            "Garden Fresh Veggie Pizza" if has_veggies else
-            "Custom Artisan Pizza"
+    recipe_name = ("Hearty Meat & Veggie Pizza" if has_meat and has_veggies else
+                  "Savory Meat Lovers Pizza" if has_meat else
+                  "Garden Fresh Veggie Pizza" if has_veggies else
+                  "Custom Artisan Pizza")
 
-        steps = [
+    steps = [
         CookingStep(
             step_number=1,
             title="Prepare the Dough",
@@ -615,7 +619,7 @@ elif response.status_code == 429:  # Rate limiting
         )
     ]
 
-        return Recipe(
+    return Recipe(
         id=str(uuid.uuid4()),
         name=recipe_name,
         ingredients=ingredients,
@@ -641,7 +645,7 @@ elif response.status_code == 429:  # Rate limiting
         ]
     )
 
-    async def generate_llama_recipe(ingredients: List[str], dietary_preferences: DietaryPreferences) -> Recipe:
+async def generate_llama_recipe(ingredients: List[str], dietary_preferences: DietaryPreferences) -> Recipe:
     """Generate recipe using LLAMA API with fallback"""
     try:
     llama_response = await generate_recipe_with_llama(ingredients, dietary_preferences)
