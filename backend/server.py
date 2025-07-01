@@ -648,16 +648,16 @@ def create_fallback_recipe(ingredients: List[str], dietary_preferences: DietaryP
 async def generate_llama_recipe(ingredients: List[str], dietary_preferences: DietaryPreferences) -> Recipe:
     """Generate recipe using LLAMA API with fallback"""
     try:
-    llama_response = await generate_recipe_with_llama(ingredients, dietary_preferences)
-        return convert_llama_response_to_recipe(llama_response, ingredients, dietary_preferences) if llama_response
-    else create_fallback_recipe(ingredients, dietary_preferences)
+        llama_response = await generate_recipe_with_llama(ingredients, dietary_preferences)
+        if llama_response:
+            return convert_llama_response_to_recipe(llama_response, ingredients, dietary_preferences)
+        return create_fallback_recipe(ingredients, dietary_preferences)
     except Exception as e:
-    logger.error(f"Recipe generation failed: {e}")
+        logger.error(f"Recipe generation failed: {e}")
         return create_fallback_recipe(ingredients, dietary_preferences)
 
-    # Database safe operation handler (backward compatibility)
-
-    async def safe_db_operation(operation, *args, **kwargs):
+async def safe_db_operation(operation, *args, **kwargs):
+    """Database safe operation handler (backward compatibility)"""
     return await mongo_manager.safe_operation(operation, *args, **kwargs)
 
     # API Routes
