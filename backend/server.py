@@ -34,7 +34,7 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:3000",
         "http://127.0.0.1:3000",
-        "https://ai-pizza-frontend.vercel.app",
+        "https://ai-pizza-generator.vercel.app",
         "https://pizzacrust.onrender.com"
     ],
     allow_origin_regex=r"https://.*\.vercel\.app",
@@ -102,7 +102,7 @@ async def http_exception_handler(request: Request, exc: HTTPException):
         headers={
             "Authorization": f"Bearer {LLAMA_API_KEY}",
             "Content-Type": "application/json",
-            "HTTP-Referer": "http://localhost:3000",  # or your deployed domain
+            "HTTP-Referer": "https://ai-pizza-generator.vercel.app",  # or your deployed domain
             "X-Title": "ai-pizza-generator"
         }
     )
