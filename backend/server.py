@@ -1116,7 +1116,7 @@ async def db_connection_middleware(request: Request, call_next):
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
     uvicorn.run(
-        "main:app",
+        "server:app",
         host="0.0.0.0",
         port=port,
         reload=False,  # Disable reload in production
