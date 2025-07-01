@@ -9,3 +9,4 @@ pymongo==4.6.0
 gunicorn==21.2.0
 pandas>=2.2.3  # or latest version
 dnspython  # Required for mongodb+srv connections
+certifi>=2025.6.15
