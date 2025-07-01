@@ -55,16 +55,6 @@ if not LLAMA_API_KEY:
     logger.error("LLAMA_API_KEY not found in environment variables")
     raise ValueError("LLAMA_API_KEY is required")
 
-MONGO_URI = os.environ.get("MONGODB_URI") or os.environ.get("MONGO_URL")
-if not MONGO_URI:
-    raise ValueError("MONGODB_URI environment variable not set")
-
-# Verify MongoDB URI is correct
-if "localhost" in MONGO_URI or "127.0.0.1" in MONGO_URI:
-    raise ValueError("Invalid MongoDB URI - should point to Atlas cluster, not localhost")
-
-logger.info(f"Connecting to MongoDB with URI: {MONGO_URI[:MONGO_URI.find('@')+1]}...")
-
 # Correct Hugging Face inference API base URL for Mistral
 LLAMA_API_BASE_URL = os.environ.get(
     "LLAMA_API_BASE_URL",
@@ -74,91 +64,53 @@ LLAMA_API_BASE_URL = os.environ.get(
 # Request timeout setting
 LLAMA_TIMEOUT = 30  # seconds
 
+# Validate environment variables
+MONGO_URI = os.getenv("MONGODB_URI")
+if not MONGO_URI:
+    raise ValueError("MONGODB_URI environment variable not set")
+
+if any(x in MONGO_URI for x in ["localhost", "127.0.0.1"]):
+    raise ValueError("MongoDB URI points to localhost - should be Atlas cluster")
+logger.info(f"Connecting to MongoDB at: {MONGO_URI.split('@')[-1].split('/')[0]}")
+
+# Initialize MongoDB connection
+def get_mongo_client():
+    try:
+        # Log the first part of the URI (without credentials)
+        logger.info(f"Connecting to MongoDB at: {MONGO_URI.split('@')[-1].split('/')[0]}")
+        
+        client = AsyncIOMotorClient(
+            MONGO_URI,
+            tls=True,
+            tlsCAFile=certifi.where(),
+            connectTimeoutMS=10000,
+            socketTimeoutMS=30000,
+            serverSelectionTimeoutMS=10000,
+            maxPoolSize=10,
+            retryWrites=True,
+            retryReads=True
+        )
+        return client
+    except Exception as e:
+        logger.error(f"Failed to create MongoDB client: {e}")
+        raise
+
+# Global MongoDB client
+try:
+    client = get_mongo_client()
+    db = client.get_database("pizza_generator")
+    recipes_collection = db.recipes
+    sessions_collection = db.user_sessions
+    logger.info("MongoDB collections initialized")
+except Exception as e:
+    logger.error(f"Failed to initialize MongoDB: {e}")
+    raise
+
+
 # Create custom SSL context
 ssl_context = ssl.create_default_context(cafile=certifi.where())
 ssl_context.check_hostname = False
 ssl_context.verify_mode = ssl.CERT_REQUIRED
-
-# MongoDB Connection Configuration
-
-
-async def get_mongo_client():
-    max_retries = 3
-    retry_delay = 2  # seconds
-
-    for attempt in range(max_retries):
-        try:
-            client = AsyncIOMotorClient(
-                MONGO_URI,
-                tls=True,
-                tlsCAFile=certifi.where(),
-                tlsAllowInvalidCertificates=False,
-                retryWrites=True,
-                retryReads=True,
-                connectTimeoutMS=20000,
-                socketTimeoutMS=30000,
-                serverSelectionTimeoutMS=10000,
-                maxPoolSize=10,
-                ssl=True,
-                ssl_cert_reqs=ssl.CERT_REQUIRED,
-                ssl_ca_certs=certifi.where(),
-                ssl_match_hostname=False,
-                directConnection=False,
-                tlsInsecure=False
-            )
-            await client.admin.command('ping')  # Test connection
-            logger.info(
-                f"MongoDB connection established (attempt {attempt + 1})")
-            return client
-        except pymongo.errors.ServerSelectionTimeoutError as e:
-            logger.warning(
-                f"Attempt {attempt + 1} failed (ServerSelectionTimeout): {e}")
-            if attempt < max_retries - 1:
-                await asyncio.sleep(retry_delay)
-            else:
-                logger.error("Max retries reached for ServerSelectionTimeout")
-                raise
-        except pymongo.errors.ConnectionFailure as e:
-            logger.warning(
-                f"Attempt {attempt + 1} failed (ConnectionFailure): {e}")
-            if attempt < max_retries - 1:
-                await asyncio.sleep(retry_delay)
-            else:
-                logger.error("Max retries reached for ConnectionFailure")
-                raise
-        except Exception as e:
-            logger.error(f"Unexpected MongoDB connection error: {e}")
-            raise
-
-# Initialize MongoDB connection
-try:
-    client = AsyncIOMotorClient(
-        MONGO_URI,
-        tls=True,
-        tlsCAFile=certifi.where(),
-        tlsAllowInvalidCertificates=False,
-        retryWrites=True,
-        retryReads=True,
-        connectTimeoutMS=20000,
-        socketTimeoutMS=30000,
-        serverSelectionTimeoutMS=10000,
-        maxPoolSize=10,
-        ssl=True,
-        ssl_cert_reqs=ssl.CERT_REQUIRED,
-        ssl_ca_certs=certifi.where(),
-        ssl_match_hostname=False,
-        directConnection=False,
-        tlsInsecure=False
-    )
-    db = client.pizza_generator
-    recipes_collection = db.recipes
-    sessions_collection = db.user_sessions
-    logger.info("MongoDB client configured successfully")
-except Exception as e:
-    logger.error(f"Failed to configure MongoDB client: {e}")
-    raise
-
-# Global exception handler
 
 
 @app.exception_handler(Exception)
@@ -194,8 +146,6 @@ async def health_check():
 
 
 # Pydantic models
-
-
 class IngredientSelection(BaseModel):
     category: str
     ingredients: List[str]
@@ -735,24 +685,18 @@ async def generate_llama_recipe(ingredients: List[str], dietary_preferences: Die
 # Database safe operation handler
 
 
+# Database operation wrapper
 async def safe_db_operation(operation, *args, **kwargs):
     try:
         return await operation(*args, **kwargs)
     except pymongo.errors.ServerSelectionTimeoutError as e:
         logger.error(f"Database timeout: {e}")
-        raise HTTPException(
-            status_code=503, detail="Database operation timed out")
-    except pymongo.errors.NetworkTimeout as e:
-        logger.error(f"Network timeout: {e}")
-        raise HTTPException(
-            status_code=503, detail="Network operation timed out")
+        raise HTTPException(status_code=503, detail="Database unavailable")
     except Exception as e:
         logger.error(f"Database operation failed: {e}")
-        raise HTTPException(
-            status_code=500, detail="Database operation failed")
+        raise HTTPException(status_code=500, detail="Database error")
 
 # API Routes
-
 
 @app.get("/")
 async def root():
@@ -844,28 +788,20 @@ async def startup_db_client():
 
 
 # Updated generate_recipe endpoint with fixed DB operations
+# Example route using the safe wrapper
 @app.post("/api/generate-recipe")
 async def generate_recipe(request: RecipeRequest):
     try:
-        logger.info(f"Received generate recipe request: {request}")
-
-        # Use the safe database operations
-        dietary_preferences_data = request.dietary_preferences.model_dump() \
-            if hasattr(request.dietary_preferences, "model_dump") \
-            else request.dietary_preferences
-
-        session_data = {
-            "session_id": request.session_id,
-            "ingredients": request.ingredients,
-            "dietary_preferences": dietary_preferences_data,
-            "timestamp": datetime.now(timezone.utc).isoformat()
-        }
-
-        # Use safe operation wrapper
-        await mongo_manager.safe_operation(
-            mongo_manager.sessions_collection.update_one,
+        # Use the safe wrapper for all DB operations
+        await safe_db_operation(
+            sessions_collection.update_one,
             {"session_id": request.session_id},
-            {"$set": session_data},
+            {"$set": {
+                "session_id": request.session_id,
+                "ingredients": request.ingredients,
+                "dietary_preferences": request.dietary_preferences.dict(),
+                "timestamp": datetime.utcnow()
+            }},
             upsert=True
         )
 
@@ -902,11 +838,8 @@ async def generate_recipe(request: RecipeRequest):
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Unexpected error in generate-recipe: {str(e)}", exc_info=True)
-        raise HTTPException(
-            status_code=500,
-            detail=f"An unexpected error occurred: {str(e)}"
-        )
+        logger.error(f"Unexpected error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/api/recipe/{recipe_id}")
