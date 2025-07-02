@@ -390,7 +390,7 @@ async def generate_recipe_with_llama(ingredients: List[str], dietary_preferences
 
         # Define model at the start
         LLAMA_MODEL = os.environ.get(
-            "LLAMA_MODEL", 
+            "LLAMA_MODEL",
             "deepseek/deepseek-r1-0528-qwen3-8b:free"
         )
 
@@ -480,7 +480,8 @@ Required JSON Structure:
 
         try:
             response_text = response.json()["choices"][0]["message"]["content"]
-            clean_json = response_text.replace('```json', '').replace('```', '').strip()
+            clean_json = response_text.replace(
+                '```json', '').replace('```', '').strip()
             recipe_data = json.loads(clean_json)
             return recipe_data
         except (json.JSONDecodeError, KeyError) as e:
@@ -645,6 +646,7 @@ def create_fallback_recipe(ingredients: List[str], dietary_preferences: DietaryP
         ]
     )
 
+
 async def generate_llama_recipe(ingredients: List[str], dietary_preferences: DietaryPreferences) -> Recipe:
     """Generate recipe using LLAMA API with fallback"""
     try:
@@ -656,14 +658,18 @@ async def generate_llama_recipe(ingredients: List[str], dietary_preferences: Die
         logger.error(f"Recipe generation failed: {e}")
         return create_fallback_recipe(ingredients, dietary_preferences)
 
+
 async def safe_db_operation(operation, *args, **kwargs):
     """Database safe operation handler (backward compatibility)"""
     return await mongo_manager.safe_operation(operation, *args, **kwargs)
 
 # API Routes
+
+
 @app.get("/")
 async def root():
     return {"message": "Pizza Generator API", "status": "running"}
+
 
 @app.get("/api/ingredients")
 async def get_ingredients():
@@ -678,12 +684,12 @@ async def get_ingredients_by_category(category: str):
 
 
 @app.post("/api/check-conflicts")
-    async def check_conflicts(ingredients: List[str], dietary_preferences: DietaryPreferences):
+async def check_conflicts(ingredients: List[str], dietary_preferences: DietaryPreferences):
     conflicts = []
     for ingredient in ingredients:
-    for allergen in dietary_preferences.allergen_avoidance:
-    if allergen.lower() in ingredient.lower():
-    conflicts.append({
+        for allergen in dietary_preferences.allergen_avoidance:
+            if allergen.lower() in ingredient.lower():
+                conflicts.append({
                     "ingredient": ingredient,
                     "conflict_type": "allergen",
                     "conflict_detail": f"Contains {allergen}"
@@ -691,22 +697,22 @@ async def get_ingredients_by_category(category: str):
 
     if "vegan" in [d.lower() for d in dietary_preferences.diet_types]:
         non_vegan_ingredients = [
-           i for i in ingredients
+            i for i in ingredients
             if any(meat in i.lower() for meat in ["cheese", "meat", "bacon", "ham", "pepperoni"])
         ]
-            conflicts.extend({
+        conflicts.extend({
             "ingredient": i,
             "conflict_type": "diet",
             "conflict_detail": "Not vegan"
         } for i in non_vegan_ingredients)
 
-        return {"conflicts": conflicts}
+    return {"conflicts": conflicts}
 
 
 @app.post("/api/find-related-recipes")
-        async def find_related_recipes(ingredients: List[str]):
-    related= []
-        RELATED_RECIPES = [
+async def find_related_recipes(ingredients: List[str]):
+    related = []
+    RELATED_RECIPES = [
         {
             "name": "Classic Margherita",
             "ingredients": ["Mozzarella", "Tomato basil (V)", "Fresh basil", "Type 00"],
@@ -724,23 +730,21 @@ async def get_ingredients_by_category(category: str):
         }
     ]
 
-        for recipe in RELATED_RECIPES:
-    match_count = len(set(ingredients) & set(recipe["ingredients"]))
+    for recipe in RELATED_RECIPES:
+        match_count = len(set(ingredients) & set(recipe["ingredients"]))
         if match_count >= 2:
-    recipe_copy = recipe.copy()
-            recipe_copy["match_count"]= match_count
-            recipe_copy["match_percentage"]= round(
-               (match_count / len(recipe["ingredients"])) * 100)
-                related.append(recipe_copy)
+            recipe_copy = recipe.copy()
+            recipe_copy["match_count"] = match_count
+            recipe_copy["match_percentage"] = round(
+                (match_count / len(recipe["ingredients"])) * 100)
+            related.append(recipe_copy)
 
-                related.sort(key=lambda x: x["match_count"], reverse=True)
-                return {"related_recipes": related[:5]}
-
-                    # Updated FastAPI startup event
+    related.sort(key=lambda x: x["match_count"], reverse=True)
+    return {"related_recipes": related[:5]}
 
 
-@ app.on_event("startup")
-                    async def startup_db_client():
+@app.on_event("startup")
+async def startup_db_client():
     """Initialize MongoDB connection on startup"""
     try:
         await mongo_manager.initialize_connection()
@@ -749,23 +753,23 @@ async def get_ingredients_by_category(category: str):
         logger.error(f"Failed to initialize MongoDB connection: {e}")
         # Don't raise - let the app start and handle connection issues per request
         pass
-                    async def startup():
-                        logger.info("Starting Pizza Generator API")
-                        logger.info(f"Using model: {os.getenv('LLAMA_MODEL')}")
-                        logger.info(f"API base URL: {LLAMA_API_BASE_URL}")
-
-                    # Updated generate_recipe endpoint with proper error handling
 
 
-@@app.post("/api/generate-recipe", response_model_exclude={"_id"})
+async def startup():
+    logger.info("Starting Pizza Generator API")
+    logger.info(f"Using model: {os.getenv('LLAMA_MODEL')}")
+    logger.info(f"API base URL: {LLAMA_API_BASE_URL}")
+
+
+@app.post("/api/generate-recipe", response_model_exclude={"_id"})
 async def generate_recipe(request: RecipeRequest):
     recipe_data = jsonable_encoder(recipe)
     try:
         logger.info(
             f"Received generate recipe request: session_id='{request.session_id}' ingredients={request.ingredients} dietary_preferences={request.dietary_preferences} recipe_type='{request.recipe_type}'")
 
-            # Use the mongo manager for all DB operations
-            await mongo_manager.safe_operation(
+        # Use the mongo manager for all DB operations
+        await mongo_manager.safe_operation(
             mongo_manager.sessions_collection.update_one,
             {"session_id": request.session_id},
             {"$set": {
@@ -774,239 +778,239 @@ async def generate_recipe(request: RecipeRequest):
                 "dietary_preferences": request.dietary_preferences.dict(),
                 "timestamp": datetime.utcnow()
             }},
-            upsert = True
+            upsert=True
         )
 
-            recipe = await generate_llama_recipe(
-           request.ingredients,
+        recipe = await generate_llama_recipe(
+            request.ingredients,
             request.dietary_preferences
         )
 
-            recipe_data = jsonable_encoder(recipe)
-            recipe_data.update({
+        recipe_data = jsonable_encoder(recipe)
+        recipe_data.update({
             "session_id": request.session_id,
             "created_at": datetime.now(timezone.utc).isoformat(),
             "api_source": "llama"
         })
 
-            try:
+        try:
             await mongo_manager.safe_operation(
-               mongo_manager.recipes_collection.insert_one,
+                mongo_manager.recipes_collection.insert_one,
                 recipe_data.copy()  # Use copy to avoid modifying original
             )
-                logger.info(f"Successfully saved recipe to database")
-            except Exception as e:
+            logger.info(f"Successfully saved recipe to database")
+        except Exception as e:
             logger.error(f"Failed to insert recipe into DB: {e}")
             # Continue without raising - recipe generation succeeded even if DB save failed
 
-            recipe_data.pop("_id", None)
-            return JSONResponse(
-            status_code = 200,
-            content ={
+        recipe_data.pop("_id", None)
+        return JSONResponse(
+            status_code=200,
+            content={
                 "recipe": recipe_data,
                 "status": "success",
                 "api_source": recipe_data["api_source"]
             }
         )
 
-        except HTTPException:
+    except HTTPException:
         raise
-        except Exception as e:
+    except Exception as e:
         logger.error(f"Unexpected error in generate-recipe: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@ app.get("/api/recipe/{recipe_id}")
-        async def get_recipe(recipe_id: str):
-        recipe = await mongo_manager.safe_operation(
+@app.get("/api/recipe/{recipe_id}")
+async def get_recipe(recipe_id: str):
+    recipe = await mongo_manager.safe_operation(
         mongo_manager.recipes_collection.find_one,
         {"id": recipe_id}
     )
 
-        if not recipe:
-    raise HTTPException(status_code=404, detail="Recipe not found")
+    if not recipe:
+        raise HTTPException(status_code=404, detail="Recipe not found")
 
-        # Remove MongoDB ObjectId from response
-        recipe.pop("_id", None)
-        return JSONResponse(content={"recipe": recipe})
+    # Remove MongoDB ObjectId from response
+    recipe.pop("_id", None)
+    return JSONResponse(content={"recipe": recipe})
 
 
-@ app.get("/api/session/{session_id}/recipes")
-    async def get_session_recipes(session_id: str):
+@app.get("/api/session/{session_id}/recipes")
+async def get_session_recipes(session_id: str):
     """Get all recipes for a specific session"""
     try:
-    recipes_cursor = mongo_manager.recipes_collection.find(
-           {"session_id": session_id}
+        recipes_cursor = mongo_manager.recipes_collection.find(
+            {"session_id": session_id}
         ).sort("created_at", -1)
 
-            recipes = await mongo_manager.safe_operation(
-           recipes_cursor.to_list,
-            length = 50  # Limit to 50 recipes per session
+        recipes = await mongo_manager.safe_operation(
+            recipes_cursor.to_list,
+            length=50  # Limit to 50 recipes per session
         )
 
-            # Remove MongoDB ObjectIds
-            for recipe in recipes:
-        recipe.pop("_id", None)
+        # Remove MongoDB ObjectIds
+        for recipe in recipes:
+            recipe.pop("_id", None)
 
-            return JSONResponse(content={
+        return JSONResponse(content={
             "session_id": session_id,
             "recipes": recipes,
             "count": len(recipes)
         })
 
-        except Exception as e:
+    except Exception as e:
         logger.error(f"Error fetching session recipes: {e}")
         raise HTTPException(
-            status_code =500, detail="Failed to fetch session recipes")
+            status_code=500, detail="Failed to fetch session recipes")
 
 
-@ app.get("/api/recipes/recent")
-                async def get_recent_recipes(limit: int = 10):
+@app.get("/api/recipes/recent")
+async def get_recent_recipes(limit: int = 10):
     """Get recent recipes across all sessions"""
     try:
         if limit > 50:
-            limit= 50  # Cap the limit
+            limit = 50  # Cap the limit
 
-        recipes_cursor= mongo_manager.recipes_collection.find(
+        recipes_cursor = mongo_manager.recipes_collection.find(
             {},
             {"session_id": 0}  # Exclude session_id for privacy
         ).sort("created_at", -1).limit(limit)
 
-            recipes = await mongo_manager.safe_operation(
-           recipes_cursor.to_list,
-            length = limit
+        recipes = await mongo_manager.safe_operation(
+            recipes_cursor.to_list,
+            length=limit
         )
 
-            # Remove MongoDB ObjectIds
-            for recipe in recipes:
-        recipe.pop("_id", None)
+        # Remove MongoDB ObjectIds
+        for recipe in recipes:
+            recipe.pop("_id", None)
 
-            return JSONResponse(content={
+        return JSONResponse(content={
             "recipes": recipes,
             "count": len(recipes)
         })
 
-        except Exception as e:
+    except Exception as e:
         logger.error(f"Error fetching recent recipes: {e}")
         raise HTTPException(
-            status_code =500, detail="Failed to fetch recent recipes")
+            status_code=500, detail="Failed to fetch recent recipes")
 
 
-@ app.delete("/api/recipe/{recipe_id}")
-            async def delete_recipe(recipe_id: str):
-            """Delete a specific recipe"""
-            try:
-            result = await mongo_manager.safe_operation(
+@app.delete("/api/recipe/{recipe_id}")
+async def delete_recipe(recipe_id: str):
+    """Delete a specific recipe"""
+    try:
+        result = await mongo_manager.safe_operation(
             mongo_manager.recipes_collection.delete_one,
             {"id": recipe_id}
         )
 
-            if result.deleted_count == 0:
-        raise HTTPException(status_code=404, detail="Recipe not found")
+        if result.deleted_count == 0:
+            raise HTTPException(status_code=404, detail="Recipe not found")
 
-            return JSONResponse(content={
+        return JSONResponse(content={
             "message": "Recipe deleted successfully",
             "recipe_id": recipe_id
         })
 
-        except HTTPException:
+    except HTTPException:
         raise
-        except Exception as e:
+    except Exception as e:
         logger.error(f"Error deleting recipe: {e}")
         raise HTTPException(status_code=500, detail="Failed to delete recipe")
 
 
-@ app.post("/api/recipe/{recipe_id}/save")
-        async def save_recipe_to_favorites(recipe_id: str, session_id: str):
+@app.post("/api/recipe/{recipe_id}/save")
+async def save_recipe_to_favorites(recipe_id: str, session_id: str):
     """Mark a recipe as favorite for a session"""
-        try:
+    try:
         # Check if recipe exists
-        recipe= await mongo_manager.safe_operation(
-           mongo_manager.recipes_collection.find_one,
+        recipe = await mongo_manager.safe_operation(
+            mongo_manager.recipes_collection.find_one,
             {"id": recipe_id}
         )
 
-            if not recipe:
-        raise HTTPException(status_code=404, detail="Recipe not found")
+        if not recipe:
+            raise HTTPException(status_code=404, detail="Recipe not found")
 
-            # Update recipe to mark as favorite
-            await mongo_manager.safe_operation(
-           mongo_manager.recipes_collection.update_one,
+        # Update recipe to mark as favorite
+        await mongo_manager.safe_operation(
+            mongo_manager.recipes_collection.update_one,
             {"id": recipe_id},
             {"$set": {"is_favorite": True, "favorited_at": datetime.now(
                 timezone.utc).isoformat()}}
         )
 
-            return JSONResponse(content={
+        return JSONResponse(content={
             "message": "Recipe saved to favorites",
             "recipe_id": recipe_id
         })
 
-        except HTTPException:
+    except HTTPException:
         raise
-        except Exception as e:
+    except Exception as e:
         logger.error(f"Error saving recipe to favorites: {e}")
         raise HTTPException(status_code=500, detail="Failed to save recipe")
 
 
-@ app.get("/api/session/{session_id}/favorites")
-        async def get_favorite_recipes(session_id: str):
+@app.get("/api/session/{session_id}/favorites")
+async def get_favorite_recipes(session_id: str):
     """Get favorite recipes for a session"""
-        try:
-        recipes_cursor= mongo_manager.recipes_collection.find(
-           {"session_id": session_id, "is_favorite": True}
+    try:
+        recipes_cursor = mongo_manager.recipes_collection.find(
+            {"session_id": session_id, "is_favorite": True}
         ).sort("favorited_at", -1)
 
-            recipes = await mongo_manager.safe_operation(
-           recipes_cursor.to_list,
-            length = 50
+        recipes = await mongo_manager.safe_operation(
+            recipes_cursor.to_list,
+            length=50
         )
 
-            # Remove MongoDB ObjectIds
-            for recipe in recipes:
-        recipe.pop("_id", None)
+        # Remove MongoDB ObjectIds
+        for recipe in recipes:
+            recipe.pop("_id", None)
 
-            return JSONResponse(content={
+        return JSONResponse(content={
             "session_id": session_id,
             "favorite_recipes": recipes,
             "count": len(recipes)
         })
 
-        except Exception as e:
+    except Exception as e:
         logger.error(f"Error fetching favorite recipes: {e}")
         raise HTTPException(
-            status_code =500, detail="Failed to fetch favorite recipes")
+            status_code=500, detail="Failed to fetch favorite recipes")
 
 
-@ app.get("/api/stats")
-                async def get_api_stats():
+@app.get("/api/stats")
+async def get_api_stats():
     """Get API usage statistics"""
     try:
         # Get total recipes count
-        total_recipes= await mongo_manager.safe_operation(
+        total_recipes = await mongo_manager.safe_operation(
             mongo_manager.recipes_collection.count_documents,
             {}
         )
 
-            # Get total sessions count
-            total_sessions = await mongo_manager.safe_operation(
-           mongo_manager.sessions_collection.count_documents,
+        # Get total sessions count
+        total_sessions = await mongo_manager.safe_operation(
+            mongo_manager.sessions_collection.count_documents,
             {}
         )
 
-            # Get recipes created today
-            today_start = datetime.now(timezone.utc).replace(
-            hour =0, minute=0, second=0, microsecond=0)
-            recipes_today = await mongo_manager.safe_operation(
+        # Get recipes created today
+        today_start = datetime.now(timezone.utc).replace(
+            hour=0, minute=0, second=0, microsecond=0)
+        recipes_today = await mongo_manager.safe_operation(
             mongo_manager.recipes_collection.count_documents,
             {"created_at": {"$gte": today_start.isoformat()}}
         )
 
-            # Get most popular ingredients (simplified)
-            popular_ingredients = ["Mozzarella", "Pepperoni",
+        # Get most popular ingredients (simplified)
+        popular_ingredients = ["Mozzarella", "Pepperoni",
                               "Mushrooms", "Bell peppers", "Tomato basil"]
 
-                               return JSONResponse(content={
+        return JSONResponse(content={
             "total_recipes": total_recipes,
             "total_sessions": total_sessions,
             "recipes_today": recipes_today,
@@ -1014,20 +1018,20 @@ async def generate_recipe(request: RecipeRequest):
             "api_status": "healthy"
         })
 
-                                   except Exception as e:
+    except Exception as e:
         logger.error(f"Error fetching API stats: {e}")
         return JSONResponse(
-            status_code = 500,
-            content = {"error": "Failed to fetch statistics"}
+            status_code=500,
+            content={"error": "Failed to fetch statistics"}
         )
 
 
-@ app.post("/api/feedback")
-        async def submit_feedback(feedback_data: dict):
-        """Submit user feedback"""
-        try:
-        feedback_entry= {
-           "id": str(uuid.uuid4()),
+@app.post("/api/feedback")
+async def submit_feedback(feedback_data: dict):
+    """Submit user feedback"""
+    try:
+        feedback_entry = {
+            "id": str(uuid.uuid4()),
             "rating": feedback_data.get("rating"),
             "comment": feedback_data.get("comment", ""),
             "recipe_id": feedback_data.get("recipe_id"),
@@ -1036,96 +1040,90 @@ async def generate_recipe(request: RecipeRequest):
             "type": "recipe_feedback"
         }
 
-            # Create feedback collection if it doesn't exist
-            feedback_collection = mongo_manager.db.feedback
+        # Create feedback collection if it doesn't exist
+        feedback_collection = mongo_manager.db.feedback
 
-            await mongo_manager.safe_operation(
-           feedback_collection.insert_one,
+        await mongo_manager.safe_operation(
+            feedback_collection.insert_one,
             feedback_entry
         )
 
-            return JSONResponse(content={
+        return JSONResponse(content={
             "message": "Feedback submitted successfully",
             "feedback_id": feedback_entry["id"]
         })
 
-        except Exception as e:
+    except Exception as e:
         logger.error(f"Error submitting feedback: {e}")
         raise HTTPException(
-            status_code =500, detail="Failed to submit feedback")
-
-            # Cleanup endpoint for development/testing
+            status_code=500, detail="Failed to submit feedback")
 
 
-@ app.delete("/api/cleanup/{session_id}")
-            async def cleanup_session(session_id: str):
-            """Clean up all data for a specific session (for development/testing)"""
-            try:
-            # Delete all recipes for the session
-            recipes_result = await mongo_manager.safe_operation(
+@app.delete("/api/cleanup/{session_id}")
+async def cleanup_session(session_id: str):
+    """Clean up all data for a specific session (for development/testing)"""
+    try:
+        # Delete all recipes for the session
+        recipes_result = await mongo_manager.safe_operation(
             mongo_manager.recipes_collection.delete_many,
             {"session_id": session_id}
         )
 
-            # Delete session data
-            session_result = await mongo_manager.safe_operation(
-           mongo_manager.sessions_collection.delete_one,
+        # Delete session data
+        session_result = await mongo_manager.safe_operation(
+            mongo_manager.sessions_collection.delete_one,
             {"session_id": session_id}
         )
 
-            return JSONResponse(content={
+        return JSONResponse(content={
             "message": "Session cleaned up successfully",
             "deleted_recipes": recipes_result.deleted_count,
             "deleted_session": session_result.deleted_count > 0
         })
 
-        except Exception as e:
+    except Exception as e:
         logger.error(f"Error cleaning up session: {e}")
         raise HTTPException(
-            status_code =500, detail="Failed to cleanup session")
-
-            # Updated shutdown event
+            status_code=500, detail="Failed to cleanup session")
 
 
-@ app.on_event("shutdown")
-            async def shutdown_db_client():
-            """Clean up MongoDB connection on shutdown"""
-            try:
-            if mongo_manager.client:
+@app.on_event("shutdown")
+async def shutdown_db_client():
+    """Clean up MongoDB connection on shutdown"""
+    try:
+        if mongo_manager.client:
             mongo_manager.client.close()
             logger.info("MongoDB connection closed")
-            except Exception as e:
-            logger.error(f"Error closing MongoDB connection: {e}")
-
-            # Error handling for MongoDB connection issues
+    except Exception as e:
+        logger.error(f"Error closing MongoDB connection: {e}")
 
 
-@ app.middleware("http")
-            async def db_connection_middleware(request: Request, call_next):
-            """Middleware to handle database connection issues"""
-            try:
-            response = await call_next(request)
-            return response
-            except pymongo.errors.ServerSelectionTimeoutError:
-            logger.error("Database connection timeout")
-            return JSONResponse(
-            status_code = 503,
-            content = {"detail": "Database temporarily unavailable"}
+@app.middleware("http")
+async def db_connection_middleware(request: Request, call_next):
+    """Middleware to handle database connection issues"""
+    try:
+        response = await call_next(request)
+        return response
+    except pymongo.errors.ServerSelectionTimeoutError:
+        logger.error("Database connection timeout")
+        return JSONResponse(
+            status_code=503,
+            content={"detail": "Database temporarily unavailable"}
         )
-        except Exception as e:
+    except Exception as e:
         logger.error(f"Unexpected error in middleware: {e}")
         return JSONResponse(
-            status_code = 500,
-            content = {"detail": "Internal server error"}
+            status_code=500,
+            content={"detail": "Internal server error"}
         )
 
-        # Run the application
-        if __name__ == "__main__":
-        port = int(os.environ.get("PORT", 8000))
-        uvicorn.run(
+
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run(
         "server:app",
-        host = "0.0.0.0",
-        port = port,
-        reload = False,  # Disable reload in production
-        log_level = "info"
+        host="0.0.0.0",
+        port=port,
+        reload=False,  # Disable reload in production
+        log_level="info"
     )
