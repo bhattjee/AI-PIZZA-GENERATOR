@@ -878,7 +878,7 @@ function App() {
   const renderCookingAssistant = () => {
     if (!currentRecipe) return null;
 
-    const currentStepData = currentRecipe.steps[currentCookingStep];
+    const currentStepData = currentRecipe?.steps?.[currentCookingStep] || {};
     const isLastStep = currentCookingStep === currentRecipe.steps.length - 1;
     const allStepsCompleted =
       completedSteps.size === currentRecipe.steps.length;
@@ -888,11 +888,11 @@ function App() {
         <h2>👨‍🍳 Cooking Assistant</h2>
 
         <div className="recipe-header">
-          <h3>{currentRecipe.name}</h3>
+          <h3>{currentRecipe.name || "Unnamed Recipe"}</h3>
           <div className="recipe-meta">
-            <span>⏱️ {currentRecipe.total_time} min total</span>
-            <span>🍽️ Serves {currentRecipe.servings}</span>
-            <span>📊 {currentRecipe.difficulty}</span>
+            <span>⏱️ {currentRecipe.total_time || "N/A"} min total</span>
+            <span>🍽️ Serves {currentRecipe.servings || "N/A"}</span>
+            <span>📊 {currentRecipe.difficulty || "Unknown"}</span>
           </div>
         </div>
 
@@ -900,12 +900,18 @@ function App() {
           <div className="current-step">
             <div className="step-header">
               <h4>
-                Step {currentStepData.step_number}: {currentStepData.title}
+                Step {currentStepData.step_number || currentCookingStep + 1}:{" "}
+                {typeof currentStepData.title === "string"
+                  ? currentStepData.title
+                  : "Untitled Step"}
               </h4>
+
               {currentStepData.duration_minutes && (
                 <div className="timer-section">
                   <button
-                    onClick={() => startTimer(currentStepData.duration_minutes)}
+                    onClick={() =>
+                      startTimer(parseInt(currentStepData.duration_minutes))
+                    }
                     className="start-timer-button"
                     disabled={timerActive}
                   >
@@ -920,7 +926,11 @@ function App() {
               )}
             </div>
 
-            <p className="step-description">{currentStepData.description}</p>
+            <p className="step-description">
+              {typeof currentStepData.description === "string"
+                ? currentStepData.description
+                : "No description provided."}
+            </p>
 
             {currentStepData.temperature && (
               <div className="temperature-info">
@@ -959,76 +969,39 @@ function App() {
         <div className="steps-overview">
           <h4>All Steps Overview</h4>
           <div className="steps-list">
-            {Array.isArray(currentRecipe.steps) &&
-              currentRecipe.steps.map((step, index) => {
-                const {
-                  step_number,
-                  title,
-                  description,
-                  duration_minutes,
-                  ingredients_used,
-                  equipment,
-                } = step;
-
-                return (
-                  <div
-                    key={step_number}
-                    className={`step-item ${
-                      completedSteps.has(step_number) ? "completed" : ""
-                    } ${index === currentCookingStep ? "current" : ""}`}
-                    onClick={() => setCurrentCookingStep(index)}
-                  >
-                    <div className="step-number">{step_number}</div>
-                    <div className="step-content">
-                      <h5>
-                        {typeof title === "string"
-                          ? title
-                          : `Step ${step_number}`}
-                      </h5>
-                      <p>
-                        {typeof description === "string"
-                          ? description
-                          : "No description available."}
-                      </p>
-
-                      {Array.isArray(ingredients_used) &&
-                        ingredients_used.length > 0 && (
-                          <p>
-                            <strong>Ingredients:</strong>{" "}
-                            {ingredients_used.map((item, i) => (
-                              <span key={i}>
-                                {item}
-                                {i < ingredients_used.length - 1 ? ", " : ""}
-                              </span>
-                            ))}
-                          </p>
-                        )}
-
-                      {Array.isArray(equipment) && equipment.length > 0 && (
-                        <p>
-                          <strong>Equipment:</strong>{" "}
-                          {equipment.map((item, i) => (
-                            <span key={i}>
-                              {item}
-                              {i < equipment.length - 1 ? ", " : ""}
-                            </span>
-                          ))}
-                        </p>
-                      )}
-
-                      {duration_minutes && (
-                        <span className="duration">
-                          ⏱️ {duration_minutes} min
-                        </span>
-                      )}
-                    </div>
-
-                    {completedSteps.has(step_number) && (
-                      <div className="checkmark">✅</div>
-                    )}
-                  </div>
-                );
-              })}
+            {currentRecipe.steps.map((step, index) => (
+              <div
+                key={step.step_number || index}
+                className={`step-item ${
+                  completedSteps.has(step.step_number) ? "completed" : ""
+                } ${index === currentCookingStep ? "current" : ""}`}
+                onClick={() => setCurrentCookingStep(index)}
+              >
+                <div className="step-number">
+                  {step.step_number || index + 1}
+                </div>
+                <div className="step-content">
+                  <h5>
+                    {typeof step.title === "string"
+                      ? step.title
+                      : `Step ${step.step_number || index + 1}`}
+                  </h5>
+                  <p>
+                    {typeof step.description === "string"
+                      ? step.description
+                      : "No description."}
+                  </p>
+                  {step.duration_minutes && (
+                    <span className="duration">
+                      ⏱️ {step.duration_minutes} min
+                    </span>
+                  )}
+                </div>
+                {completedSteps.has(step.step_number) && (
+                  <div className="checkmark">✅</div>
+                )}
+              </div>
+            ))}
           </div>
         </div>
 
@@ -1067,18 +1040,32 @@ function App() {
           <div className="sauce-preparation">
             <h4>Sauce Preparation</h4>
             <ul>
-              {currentRecipe.sauce_preparation.map((step, index) => (
-                <li key={index}>{step}</li>
-              ))}
+              {Array.isArray(currentRecipe.sauce_preparation) ? (
+                currentRecipe.sauce_preparation.map((step, index) => (
+                  <li key={index}>
+                    {typeof step === "string"
+                      ? step
+                      : JSON.stringify(step, null, 2)}
+                  </li>
+                ))
+              ) : (
+                <li>No sauce preparation steps provided.</li>
+              )}
             </ul>
           </div>
 
           <div className="cooking-tips">
             <h4>Pro Tips</h4>
             <ul>
-              {currentRecipe.tips.map((tip, index) => (
-                <li key={index}>{tip}</li>
-              ))}
+              {Array.isArray(currentRecipe.tips) ? (
+                currentRecipe.tips.map((tip, index) => (
+                  <li key={index}>
+                    {typeof tip === "string" ? tip : JSON.stringify(tip)}
+                  </li>
+                ))
+              ) : (
+                <li>No cooking tips available.</li>
+              )}
             </ul>
           </div>
         </div>
