@@ -558,29 +558,32 @@ def convert_llama_response_to_recipe(llama_response: Dict, ingredients: List[str
             equipment=step_data.get("equipment", [])
         ))
 
+    # FIX: Convert sauce preparation to plain dictionaries instead of Pydantic objects
     sauce_preparation = []
     raw_sauce = llama_response.get("sauce_preparation", [])
     
     if raw_sauce and isinstance(raw_sauce, list):
         for i, item in enumerate(raw_sauce):
             if isinstance(item, dict):
-                sauce_preparation.append(SauceStep(
-                    step_number=item.get("step_number", i + 1),
-                    title=item.get("title", f"Sauce Step {i + 1}"),
-                    description=item.get("description", ""),
-                    duration_minutes=item.get("duration_minutes", 5),
-                    ingredients_used=item.get("ingredients_used", []),
-                    equipment=item.get("equipment", [])
-                ))
+                # Create plain dictionary instead of SauceStep object
+                sauce_preparation.append({
+                    "step_number": item.get("step_number", i + 1),
+                    "title": item.get("title", f"Sauce Step {i + 1}"),
+                    "description": item.get("description", ""),
+                    "duration_minutes": item.get("duration_minutes", 5),
+                    "ingredients_used": item.get("ingredients_used", []),
+                    "equipment": item.get("equipment", [])
+                })
             elif isinstance(item, str):
-                sauce_preparation.append(SauceStep(
-                    step_number=i + 1,
-                    title=f"Sauce Step {i + 1}",
-                    description=item,
-                    duration_minutes=5,
-                    ingredients_used=[],
-                    equipment=[]
-                ))
+                # Create plain dictionary for string items too
+                sauce_preparation.append({
+                    "step_number": i + 1,
+                    "title": f"Sauce Step {i + 1}",
+                    "description": item,
+                    "duration_minutes": 5,
+                    "ingredients_used": [],
+                    "equipment": []
+                })
 
     nutrition_data = llama_response.get("nutrition", {})
     nutrition = NutritionInfo(
@@ -602,7 +605,7 @@ def convert_llama_response_to_recipe(llama_response: Dict, ingredients: List[str
         servings=llama_response.get("servings", 4),
         difficulty=llama_response.get("difficulty", "Medium"),
         steps=steps,
-        sauce_preparation=sauce_preparation,
+        sauce_preparation=sauce_preparation,  # Now contains plain dicts
         tips=llama_response.get("tips", []),
         nutrition=nutrition
     )
@@ -677,39 +680,40 @@ def create_fallback_recipe(ingredients: List[str], dietary_preferences: DietaryP
         )
     ]
 
+    # FIX: Return plain dictionaries instead of SauceStep objects
     sauce_steps = [
-        SauceStep(
-            step_number=1,
-            title="Heat oil",
-            description="Heat 2 tbsp olive oil in a pan",
-            duration_minutes=2,
-            ingredients_used=["olive oil"],
-            equipment=["pan"]
-        ),
-        SauceStep(
-            step_number=2,
-            title="Add garlic",
-            description="Add minced garlic and cook for 1 minute",
-            duration_minutes=1,
-            ingredients_used=["garlic"],
-            equipment=[]
-        ),
-        SauceStep(
-            step_number=3,
-            title="Add base",
-            description="Add your selected sauce base and simmer for 5-10 minutes",
-            duration_minutes=10,
-            ingredients_used=["sauce base"],
-            equipment=[]
-        ),
-        SauceStep(
-            step_number=4,
-            title="Season",
-            description="Season with salt, pepper, and herbs to taste",
-            duration_minutes=2,
-            ingredients_used=["salt", "pepper", "herbs"],
-            equipment=[]
-        )
+        {
+            "step_number": 1,
+            "title": "Heat oil",
+            "description": "Heat 2 tbsp olive oil in a pan",
+            "duration_minutes": 2,
+            "ingredients_used": ["olive oil"],
+            "equipment": ["pan"]
+        },
+        {
+            "step_number": 2,
+            "title": "Add garlic",
+            "description": "Add minced garlic and cook for 1 minute",
+            "duration_minutes": 1,
+            "ingredients_used": ["garlic"],
+            "equipment": []
+        },
+        {
+            "step_number": 3,
+            "title": "Add base",
+            "description": "Add your selected sauce base and simmer for 5-10 minutes",
+            "duration_minutes": 10,
+            "ingredients_used": ["sauce base"],
+            "equipment": []
+        },
+        {
+            "step_number": 4,
+            "title": "Season",
+            "description": "Season with salt, pepper, and herbs to taste",
+            "duration_minutes": 2,
+            "ingredients_used": ["salt", "pepper", "herbs"],
+            "equipment": []
+        }
     ]
 
     return Recipe(
@@ -724,7 +728,7 @@ def create_fallback_recipe(ingredients: List[str], dietary_preferences: DietaryP
         servings=4,
         difficulty="Medium",
         steps=steps,
-        sauce_preparation=sauce_steps,
+        sauce_preparation=sauce_steps,  # Now contains plain dicts
         tips=[
             "Use a pizza stone for crispier crust",
             "Don't overload with toppings",
