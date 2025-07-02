@@ -18,7 +18,7 @@ const MAX_SELECTIONS = {
   vegetables: 5,
   sauces: 2,
   spices_herbs: 5,
-  other_toppings: 4
+  other_toppings: 4,
 };
 
 const SPICE_LEVELS = [
@@ -141,7 +141,10 @@ function App() {
 
   const fetchIngredients = async () => {
     try {
-      console.log("Fetching ingredients from:", `${API_BASE_URL}/api/ingredients`);
+      console.log(
+        "Fetching ingredients from:",
+        `${API_BASE_URL}/api/ingredients`
+      );
       const response = await fetch(`${API_BASE_URL}/api/ingredients`);
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
@@ -157,24 +160,29 @@ function App() {
 
   const checkCategoryLimit = (category, ingredient) => {
     const categoryIngredients = ingredientCategories[category] || [];
-    const currentSelections = selectedIngredients.filter(ing => 
+    const currentSelections = selectedIngredients.filter((ing) =>
       categoryIngredients.includes(ing)
     ).length;
 
     if (currentSelections >= MAX_SELECTIONS[category]) {
-      setApiError(`Maximum ${MAX_SELECTIONS[category]} ${category.replace('_', ' ')} allowed`);
+      setApiError(
+        `Maximum ${MAX_SELECTIONS[category]} ${category.replace(
+          "_",
+          " "
+        )} allowed`
+      );
       return false;
     }
     return true;
   };
 
   const handleIngredientToggle = (ingredient) => {
-    const category = Object.keys(ingredientCategories).find(cat => 
+    const category = Object.keys(ingredientCategories).find((cat) =>
       ingredientCategories[cat].includes(ingredient)
     );
 
     if (selectedIngredients.includes(ingredient)) {
-      setSelectedIngredients(prev => prev.filter(i => i !== ingredient));
+      setSelectedIngredients((prev) => prev.filter((i) => i !== ingredient));
       return;
     }
 
@@ -182,7 +190,7 @@ function App() {
       return;
     }
 
-    setSelectedIngredients(prev => [...prev, ingredient]);
+    setSelectedIngredients((prev) => [...prev, ingredient]);
   };
 
   const handleDietaryChange = (field, value) => {
@@ -256,7 +264,9 @@ function App() {
       }
     } catch (error) {
       console.error("Error finding related recipes:", error);
-      setApiError("Failed to find related recipes. Generating custom recipe instead...");
+      setApiError(
+        "Failed to find related recipes. Generating custom recipe instead..."
+      );
       generateCustomRecipe();
     }
   };
@@ -294,7 +304,9 @@ function App() {
         );
       } catch (e) {
         console.error("Fallback recipe error:", e);
-        setCurrentRecipe(createFallbackRecipe(selectedIngredients, dietaryPreferences));
+        setCurrentRecipe(
+          createFallbackRecipe(selectedIngredients, dietaryPreferences)
+        );
       }
       setCurrentStep(STEPS.COOKING);
     };
@@ -344,7 +356,9 @@ function App() {
             url: response.url,
           };
         }
-        throw new Error(`API Error ${response.status}: ${JSON.stringify(errorData)}`);
+        throw new Error(
+          `API Error ${response.status}: ${JSON.stringify(errorData)}`
+        );
       }
 
       const data = await response.json();
@@ -402,13 +416,16 @@ function App() {
         {
           step_number: 1,
           title: "Prepare Dough",
-          description: "Mix flour with water, yeast, and salt to form a dough. Knead for 5 minutes.",
+          description:
+            "Mix flour with water, yeast, and salt to form a dough. Knead for 5 minutes.",
           duration_minutes: 10,
         },
         {
           step_number: 2,
           title: "Add Toppings",
-          description: "Spread sauce and add your selected toppings: " + ingredients.join(", "),
+          description:
+            "Spread sauce and add your selected toppings: " +
+            ingredients.join(", "),
           duration_minutes: 5,
         },
         {
@@ -501,22 +518,21 @@ function App() {
               <div className="categories-sidebar">
                 <h3>Categories</h3>
                 {Object.keys(ingredientCategories).map((category) => {
-                  const count = selectedIngredients.filter(ing => 
+                  const count = selectedIngredients.filter((ing) =>
                     ingredientCategories[category].includes(ing)
                   ).length;
                   const max = MAX_SELECTIONS[category];
-                  
+
                   return (
                     <button
                       key={category}
                       onClick={() => setSelectedCategory(category)}
                       className={`category-button ${
                         selectedCategory === category ? "active" : ""
-                      } ${
-                        count >= max ? "category-limit-reached" : ""
-                      }`}
+                      } ${count >= max ? "category-limit-reached" : ""}`}
                     >
-                      {category.charAt(0).toUpperCase() + category.slice(1).replace("_", " & ")}
+                      {category.charAt(0).toUpperCase() +
+                        category.slice(1).replace("_", " & ")}
                       <span className="category-count">
                         {count}/{max}
                       </span>
@@ -530,39 +546,49 @@ function App() {
                   {selectedCategory.charAt(0).toUpperCase() +
                     selectedCategory.slice(1).replace("_", " & ")}
                   <span className="selection-counter">
-                    {selectedIngredients.filter(ing => 
-                      ingredientCategories[selectedCategory].includes(ing)
-                    ).length}/{MAX_SELECTIONS[selectedCategory]}
+                    {
+                      selectedIngredients.filter((ing) =>
+                        ingredientCategories[selectedCategory].includes(ing)
+                      ).length
+                    }
+                    /{MAX_SELECTIONS[selectedCategory]}
                   </span>
                 </h3>
                 <div className="ingredient-buttons">
                   {ingredientCategories[selectedCategory]?.map((ingredient) => {
                     const isSelected = selectedIngredients.includes(ingredient);
-                    const categoryCount = selectedIngredients.filter(ing => 
+                    const categoryCount = selectedIngredients.filter((ing) =>
                       ingredientCategories[selectedCategory].includes(ing)
                     ).length;
-                    const maxReached = categoryCount >= MAX_SELECTIONS[selectedCategory];
-                    
+                    const maxReached =
+                      categoryCount >= MAX_SELECTIONS[selectedCategory];
+
                     return (
                       <button
                         key={ingredient}
                         onClick={() => handleIngredientToggle(ingredient)}
                         className={`ingredient-button ${
                           isSelected ? "selected" : ""
-                        } ${
-                          !isSelected && maxReached ? "disabled" : ""
-                        }`}
+                        } ${!isSelected && maxReached ? "disabled" : ""}`}
                         disabled={!isSelected && maxReached}
-                        title={!isSelected && maxReached ? 
-                          `Maximum ${MAX_SELECTIONS[selectedCategory]} ${selectedCategory.replace('_', ' ')} selected` : ""
+                        title={
+                          !isSelected && maxReached
+                            ? `Maximum ${
+                                MAX_SELECTIONS[selectedCategory]
+                              } ${selectedCategory.replace("_", " ")} selected`
+                            : ""
                         }
                       >
                         {ingredient}
                         {isSelected && (
                           <span className="selection-count">
-                            {selectedIngredients.filter(ing => 
-                              ingredientCategories[selectedCategory].includes(ing)
-                            ).indexOf(ingredient) + 1}
+                            {selectedIngredients
+                              .filter((ing) =>
+                                ingredientCategories[selectedCategory].includes(
+                                  ing
+                                )
+                              )
+                              .indexOf(ingredient) + 1}
                           </span>
                         )}
                       </button>
@@ -943,14 +969,31 @@ function App() {
               >
                 <div className="step-number">{step.step_number}</div>
                 <div className="step-content">
-                  <h5>{step.title}</h5>
-                  <p>{step.description}</p>
+                  <h5>{step.title || `Step ${step.step_number}`}</h5>
+                  <p>{step.description || "No description available."}</p>
+
+                  {Array.isArray(step.ingredients_used) &&
+                    step.ingredients_used.length > 0 && (
+                      <p>
+                        <strong>Ingredients:</strong>{" "}
+                        {step.ingredients_used.join(", ")}
+                      </p>
+                    )}
+
+                  {Array.isArray(step.equipment) &&
+                    step.equipment.length > 0 && (
+                      <p>
+                        <strong>Equipment:</strong> {step.equipment.join(", ")}
+                      </p>
+                    )}
+
                   {step.duration_minutes && (
                     <span className="duration">
                       ⏱️ {step.duration_minutes} min
                     </span>
                   )}
                 </div>
+
                 {completedSteps.has(step.step_number) && (
                   <div className="checkmark">✅</div>
                 )}
