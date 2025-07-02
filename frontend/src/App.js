@@ -1039,19 +1039,34 @@ function App() {
         <div className="recipe-details">
           <div className="sauce-preparation">
             <h4>Sauce Preparation</h4>
-            <ul>
-              {Array.isArray(currentRecipe.sauce_preparation) ? (
-                currentRecipe.sauce_preparation.map((step, index) => (
-                  <li key={index}>
-                    {typeof step === "string"
-                      ? step
-                      : JSON.stringify(step, null, 2)}
-                  </li>
-                ))
-              ) : (
-                <li>No sauce preparation steps provided.</li>
-              )}
-            </ul>
+            {Array.isArray(currentRecipe.sauce_preparation) ? (
+              <div className="sauce-steps-list">
+                {currentRecipe.sauce_preparation.map((step, index) => (
+                  <div key={index} className="sauce-step-item">
+                    <h5>
+                      Step {step.step_number || index + 1}:{" "}
+                      {step.title || "Untitled"}
+                    </h5>
+                    <p>{step.description || "No description provided."}</p>
+                    {step.duration_minutes && (
+                      <p>⏱️ Duration: {step.duration_minutes} minutes</p>
+                    )}
+                    {Array.isArray(step.ingredients_used) &&
+                      step.ingredients_used.length > 0 && (
+                        <p>
+                          🧂 Ingredients: {step.ingredients_used.join(", ")}
+                        </p>
+                      )}
+                    {Array.isArray(step.equipment) &&
+                      step.equipment.length > 0 && (
+                        <p>🍳 Equipment: {step.equipment.join(", ")}</p>
+                      )}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p>No sauce preparation steps provided.</p>
+            )}
           </div>
 
           <div className="cooking-tips">
