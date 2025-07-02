@@ -959,46 +959,76 @@ function App() {
         <div className="steps-overview">
           <h4>All Steps Overview</h4>
           <div className="steps-list">
-            {currentRecipe.steps.map((step, index) => (
-              <div
-                key={step.step_number}
-                className={`step-item ${
-                  completedSteps.has(step.step_number) ? "completed" : ""
-                } ${index === currentCookingStep ? "current" : ""}`}
-                onClick={() => setCurrentCookingStep(index)}
-              >
-                <div className="step-number">{step.step_number}</div>
-                <div className="step-content">
-                  <h5>{step.title || `Step ${step.step_number}`}</h5>
-                  <p>{step.description || "No description available."}</p>
+            {Array.isArray(currentRecipe.steps) &&
+              currentRecipe.steps.map((step, index) => {
+                const {
+                  step_number,
+                  title,
+                  description,
+                  duration_minutes,
+                  ingredients_used,
+                  equipment,
+                } = step;
 
-                  {Array.isArray(step.ingredients_used) &&
-                    step.ingredients_used.length > 0 && (
+                return (
+                  <div
+                    key={step_number}
+                    className={`step-item ${
+                      completedSteps.has(step_number) ? "completed" : ""
+                    } ${index === currentCookingStep ? "current" : ""}`}
+                    onClick={() => setCurrentCookingStep(index)}
+                  >
+                    <div className="step-number">{step_number}</div>
+                    <div className="step-content">
+                      <h5>
+                        {typeof title === "string"
+                          ? title
+                          : `Step ${step_number}`}
+                      </h5>
                       <p>
-                        <strong>Ingredients:</strong>{" "}
-                        {step.ingredients_used.join(", ")}
+                        {typeof description === "string"
+                          ? description
+                          : "No description available."}
                       </p>
+
+                      {Array.isArray(ingredients_used) &&
+                        ingredients_used.length > 0 && (
+                          <p>
+                            <strong>Ingredients:</strong>{" "}
+                            {ingredients_used.map((item, i) => (
+                              <span key={i}>
+                                {item}
+                                {i < ingredients_used.length - 1 ? ", " : ""}
+                              </span>
+                            ))}
+                          </p>
+                        )}
+
+                      {Array.isArray(equipment) && equipment.length > 0 && (
+                        <p>
+                          <strong>Equipment:</strong>{" "}
+                          {equipment.map((item, i) => (
+                            <span key={i}>
+                              {item}
+                              {i < equipment.length - 1 ? ", " : ""}
+                            </span>
+                          ))}
+                        </p>
+                      )}
+
+                      {duration_minutes && (
+                        <span className="duration">
+                          ⏱️ {duration_minutes} min
+                        </span>
+                      )}
+                    </div>
+
+                    {completedSteps.has(step_number) && (
+                      <div className="checkmark">✅</div>
                     )}
-
-                  {Array.isArray(step.equipment) &&
-                    step.equipment.length > 0 && (
-                      <p>
-                        <strong>Equipment:</strong> {step.equipment.join(", ")}
-                      </p>
-                    )}
-
-                  {step.duration_minutes && (
-                    <span className="duration">
-                      ⏱️ {step.duration_minutes} min
-                    </span>
-                  )}
-                </div>
-
-                {completedSteps.has(step.step_number) && (
-                  <div className="checkmark">✅</div>
-                )}
-              </div>
-            ))}
+                  </div>
+                );
+              })}
           </div>
         </div>
 
