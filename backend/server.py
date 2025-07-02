@@ -388,6 +388,19 @@ INGREDIENT_CATEGORIES = {
 
 # LLAMA API functions
 
+# 1. Fix malformed or truncated LLM JSON
+def try_fix_json(raw: str) -> Optional[Dict]:
+    raw = raw.replace('```json', '').replace('```', '').strip()
+    raw = re.sub(r",\s*([\]}])", r"\1", raw)
+
+    # Attempt simple fix for unclosed braces
+    if not raw.endswith("}"):
+        raw += "}"
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError as e:
+        logger.error(f"Final JSON decode failed: {e}")
+        return None
 
 async def generate_recipe_with_llama(ingredients: List[str], dietary_preferences: DietaryPreferences) -> Optional[Dict]:
     """Generate recipe using OpenRouter API"""
@@ -507,15 +520,15 @@ Required JSON Structure:
 
 
 
+# 3. Convert LLM JSON to Pydantic Recipe model
 def convert_llama_response_to_recipe(llama_response: Dict, ingredients: List[str], dietary_preferences: DietaryPreferences) -> Recipe:
-    """Convert LLAMA API response to our Recipe model"""
     if not llama_response:
         return create_fallback_recipe(ingredients, dietary_preferences)
 
-    # Parse steps
+    # Parse cooking steps
     steps = []
     for step_data in llama_response.get("steps", []):
-        step = CookingStep(
+        steps.append(CookingStep(
             step_number=step_data.get("step_number", 0),
             title=step_data.get("title", ""),
             description=step_data.get("description", ""),
@@ -523,44 +536,39 @@ def convert_llama_response_to_recipe(llama_response: Dict, ingredients: List[str
             temperature=step_data.get("temperature"),
             ingredients_used=step_data.get("ingredients_used", []),
             equipment=step_data.get("equipment", [])
-        )
-        steps.append(step)
+        ))
 
-    # Handle sauce_preparation - support both dict and string entries
+    # Handle sauce preparation (dicts or strings)
     raw_sauce = llama_response.get("sauce_preparation", [])
     sauce_preparation = []
-    if isinstance(raw_sauce, list):
-        if raw_sauce and isinstance(raw_sauce[0], dict):
-            for s in raw_sauce:
-                sauce_preparation.append(SauceStep(
-                    step_number=s.get("step_number", 0),
-                    title=s.get("title", ""),
-                    description=s.get("description", ""),
-                    duration_minutes=s.get("duration_minutes", 5),
-                    ingredients_used=s.get("ingredients_used", []),
-                    equipment=s.get("equipment", [])
-                ))
-        else:
-            # fallback for plain string steps
-            for i, line in enumerate(raw_sauce):
-                sauce_preparation.append(SauceStep(
-                    step_number=i + 1,
-                    title=f"Sauce Step {i + 1}",
-                    description=line,
-                    duration_minutes=5,
-                    ingredients_used=[],
-                    equipment=[]
-                ))
+    if raw_sauce and isinstance(raw_sauce[0], dict):
+        for s in raw_sauce:
+            sauce_preparation.append(SauceStep(
+                step_number=s.get("step_number", 0),
+                title=s.get("title", ""),
+                description=s.get("description", ""),
+                duration_minutes=s.get("duration_minutes", 5),
+                ingredients_used=s.get("ingredients_used", []),
+                equipment=s.get("equipment", [])
+            ))
+    elif raw_sauce and isinstance(raw_sauce[0], str):
+        for i, desc in enumerate(raw_sauce):
+            sauce_preparation.append(SauceStep(
+                step_number=i + 1,
+                title=f"Sauce Step {i + 1}",
+                description=desc,
+                duration_minutes=5,
+                ingredients_used=[],
+                equipment=[]
+            ))
 
-    # Parse nutrition
+    # Nutrition
     nutrition_data = llama_response.get("nutrition", {})
     nutrition = NutritionInfo(
         calories=nutrition_data.get("calories"),
         protein=nutrition_data.get("protein"),
         fat=nutrition_data.get("fat"),
-        carbohydrates=nutrition_data.get("carbohydrates"),
-        fiber=nutrition_data.get("fiber"),
-        sugar=nutrition_data.get("sugar")
+        carbohydrates=nutrition_data.get("carbs"),
     ) if nutrition_data else None
 
     return Recipe(
@@ -569,18 +577,14 @@ def convert_llama_response_to_recipe(llama_response: Dict, ingredients: List[str
         ingredients=llama_response.get("ingredients", ingredients),
         dietary_info=llama_response.get("dietary_info", dietary_preferences.diet_types),
         spice_level=llama_response.get("spice_level", dietary_preferences.spice_level),
-        prep_time=llama_response.get("prep_time", 20),
-        cook_time=llama_response.get("cook_time", 15),
+        prep_time=llama_response.get("prep_time", 15),
+        cook_time=llama_response.get("cook_time", 20),
         total_time=llama_response.get("total_time", 35),
         servings=llama_response.get("servings", 4),
         difficulty=llama_response.get("difficulty", "Medium"),
         steps=steps,
         sauce_preparation=sauce_preparation,
-        tips=llama_response.get("tips", [
-            "Preheat your oven for best results",
-            "Let the dough rest before stretching",
-            "Don't overload with toppings"
-        ]),
+        tips=llama_response.get("tips", []),
         nutrition=nutrition
     )
 
