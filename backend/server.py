@@ -658,15 +658,12 @@ async def generate_llama_recipe(ingredients: List[str], dietary_preferences: Die
 
 async def safe_db_operation(operation, *args, **kwargs):
     """Database safe operation handler (backward compatibility)"""
-    return await mongo_manager.safe_operation(operation, *args, **kwargs)
+        return await mongo_manager.safe_operation(operation, *args, **kwargs)
 
-    # API Routes
-
-
+# API Routes
 @app.get("/")
     async def root():
     return {"message": "Pizza Generator API", "status": "running"}
-
 
 @app.get("/api/ingredients")
     async def get_ingredients():
