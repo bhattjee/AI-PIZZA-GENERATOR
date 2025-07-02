@@ -396,11 +396,7 @@ async def generate_recipe_with_llama(ingredients: List[str], dietary_preferences
             logger.error("LLAMA_API_KEY not configured")
             return None
 
-        # Define model at the start
-        LLAMA_MODEL = os.environ.get(
-            "LLAMA_MODEL",
-            "deepseek/deepseek-r1-0528-qwen3-8b:free"
-        )
+        LLAMA_MODEL = os.environ.get("LLAMA_MODEL", "deepseek/deepseek-r1-0528-qwen3-8b:free")
 
         prompt = f"""Generate a detailed pizza recipe in strict JSON format with these requirements:
 
@@ -488,8 +484,14 @@ Required JSON Structure:
 
         try:
             response_text = response.json()["choices"][0]["message"]["content"]
-            clean_json = response_text.replace(
-                '```json', '').replace('```', '').strip()
+            logger.warning(f"Raw LLM response:\n{response_text[:1000]}")  # log only first 1000 chars
+
+            clean_json = response_text.replace('```json', '').replace('```', '').strip()
+
+            # Remove trailing commas
+            import re
+            clean_json = re.sub(r",\s*([\]}])", r"\1", clean_json)
+
             recipe_data = json.loads(clean_json)
             return recipe_data
         except (json.JSONDecodeError, KeyError) as e:
@@ -504,11 +506,13 @@ Required JSON Structure:
         return None
 
 
+
 def convert_llama_response_to_recipe(llama_response: Dict, ingredients: List[str], dietary_preferences: DietaryPreferences) -> Recipe:
     """Convert LLAMA API response to our Recipe model"""
     if not llama_response:
         return create_fallback_recipe(ingredients, dietary_preferences)
 
+    # Parse steps
     steps = []
     for step_data in llama_response.get("steps", []):
         step = CookingStep(
@@ -522,6 +526,33 @@ def convert_llama_response_to_recipe(llama_response: Dict, ingredients: List[str
         )
         steps.append(step)
 
+    # Handle sauce_preparation - support both dict and string entries
+    raw_sauce = llama_response.get("sauce_preparation", [])
+    sauce_preparation = []
+    if isinstance(raw_sauce, list):
+        if raw_sauce and isinstance(raw_sauce[0], dict):
+            for s in raw_sauce:
+                sauce_preparation.append(SauceStep(
+                    step_number=s.get("step_number", 0),
+                    title=s.get("title", ""),
+                    description=s.get("description", ""),
+                    duration_minutes=s.get("duration_minutes", 5),
+                    ingredients_used=s.get("ingredients_used", []),
+                    equipment=s.get("equipment", [])
+                ))
+        else:
+            # fallback for plain string steps
+            for i, line in enumerate(raw_sauce):
+                sauce_preparation.append(SauceStep(
+                    step_number=i + 1,
+                    title=f"Sauce Step {i + 1}",
+                    description=line,
+                    duration_minutes=5,
+                    ingredients_used=[],
+                    equipment=[]
+                ))
+
+    # Parse nutrition
     nutrition_data = llama_response.get("nutrition", {})
     nutrition = NutritionInfo(
         calories=nutrition_data.get("calories"),
@@ -536,18 +567,15 @@ def convert_llama_response_to_recipe(llama_response: Dict, ingredients: List[str
         id=str(uuid.uuid4()),
         name=llama_response.get("name", "Custom Pizza"),
         ingredients=llama_response.get("ingredients", ingredients),
-        dietary_info=llama_response.get(
-            "dietary_info", dietary_preferences.diet_types),
-        spice_level=llama_response.get(
-            "spice_level", dietary_preferences.spice_level),
+        dietary_info=llama_response.get("dietary_info", dietary_preferences.diet_types),
+        spice_level=llama_response.get("spice_level", dietary_preferences.spice_level),
         prep_time=llama_response.get("prep_time", 20),
         cook_time=llama_response.get("cook_time", 15),
         total_time=llama_response.get("total_time", 35),
         servings=llama_response.get("servings", 4),
         difficulty=llama_response.get("difficulty", "Medium"),
         steps=steps,
-        sauce_preparation=llama_response.get(
-            "sauce_preparation", ["Mix sauce ingredients and simmer for 10 minutes"]),
+        sauce_preparation=sauce_preparation,
         tips=llama_response.get("tips", [
             "Preheat your oven for best results",
             "Let the dough rest before stretching",
