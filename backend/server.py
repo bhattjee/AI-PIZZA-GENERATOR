@@ -292,7 +292,7 @@ class Recipe(BaseModel):
     servings: int
     difficulty: str
     steps: List[CookingStep]
-    sauce_preparation: List[Union[SauceStep, str]]  # Accepts both SauceStep objects and strings
+    sauce_preparation: List[Union[SauceStep, str]]
     tips: List[str]
     source_url: Optional[str] = None
     nutrition: Optional[NutritionInfo] = None
@@ -345,19 +345,36 @@ INGREDIENT_CATEGORIES = {
     ]
 }
 
-def try_fix_json(raw: str) -> Optional[Dict]:
-    raw = raw.replace('```json', '').replace('```', '').strip()
-    raw = re.sub(r",\s*([\]}])", r"\1", raw)
-
-    if not raw.endswith("}"):
-        raw += "}"
+def fix_json_response(response_text: str) -> Optional[Dict]:
+    """Attempt to fix common JSON formatting issues in LLM responses"""
     try:
-        return json.loads(raw)
+        # Remove JSON code block markers if present
+        response_text = response_text.replace('```json', '').replace('```', '').strip()
+        
+        # Fix unclosed quotes
+        response_text = re.sub(r'([{,])\s*([a-zA-Z0-9_]+)\s*:\s*([^"\s][^,}\n]*)', r'\1"\2": "\3"', response_text)
+        
+        # Remove trailing commas
+        response_text = re.sub(r',\s*([}\]])', r'\1', response_text)
+        
+        # Ensure proper closing of objects/arrays
+        if not response_text.endswith('}'):
+            # Find the last complete object/array and close it
+            last_brace = max(response_text.rfind('}'), response_text.rfind(']'))
+            if last_brace != -1:
+                response_text = response_text[:last_brace+1]
+            else:
+                # If no complete objects found, try to close the main object
+                response_text = response_text[:response_text.rfind('{')+1] + '}'
+        
+        # Parse the cleaned JSON
+        return json.loads(response_text)
     except json.JSONDecodeError as e:
-        logger.error(f"Final JSON decode failed: {e}")
+        logger.error(f"Failed to fix JSON response: {e}")
         return None
 
 async def generate_recipe_with_llama(ingredients: List[str], dietary_preferences: DietaryPreferences) -> Optional[Dict]:
+    """Generate recipe using OpenRouter API with improved JSON handling"""
     try:
         if not LLAMA_API_KEY:
             logger.error("LLAMA_API_KEY not configured")
@@ -412,17 +429,20 @@ Required JSON Structure:
     "carbs": 60,
     "fat": 15
   }}
-}}"""
+}}
+
+IMPORTANT: Return ONLY valid JSON, properly formatted with all quotes closed and no trailing commas."""
 
         payload = {
             "model": LLAMA_MODEL,
             "messages": [
-                {"role": "system", "content": "You are a helpful pizza recipe assistant."},
+                {"role": "system", "content": "You are a helpful pizza recipe assistant that returns properly formatted JSON."},
                 {"role": "user", "content": prompt}
             ],
             "temperature": 0.7,
             "top_p": 0.9,
-            "max_tokens": 1500
+            "max_tokens": 1500,
+            "response_format": {"type": "json_object"}
         }
 
         headers = {
@@ -453,19 +473,19 @@ Required JSON Structure:
             response_text = response.json()["choices"][0]["message"]["content"]
             logger.warning(f"Raw LLM response:\n{response_text[:1000]}")
 
-            clean_json = response_text.replace('```json', '').replace('```', '').strip()
-            clean_json = re.sub(r",\s*([\]}])", r"\1", clean_json)
+            # First try to parse directly
+            try:
+                recipe_data = json.loads(response_text)
+                return recipe_data
+            except json.JSONDecodeError:
+                # If direct parse fails, try to fix common issues
+                recipe_data = fix_json_response(response_text)
+                if recipe_data:
+                    return recipe_data
+                raise
 
-            recipe_data = json.loads(clean_json)
-            return recipe_data
-        except json.JSONDecodeError as e:
+        except (json.JSONDecodeError, KeyError) as e:
             logger.error(f"Failed to parse API response: {str(e)}")
-            fixed = try_fix_json(response_text)
-            if fixed:
-                return fixed
-            return None
-        except KeyError as e:
-            logger.error(f"Missing key in API response: {str(e)}")
             return None
 
     except requests.exceptions.Timeout:
