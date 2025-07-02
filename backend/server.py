@@ -763,12 +763,12 @@ async def startup():
 
 @app.post("/api/generate-recipe", response_model_exclude={"_id"})
 async def generate_recipe(request: RecipeRequest):
-    recipe_data = jsonable_encoder(recipe)
     try:
         logger.info(
-            f"Received generate recipe request: session_id='{request.session_id}' ingredients={request.ingredients} dietary_preferences={request.dietary_preferences} recipe_type='{request.recipe_type}'")
+            f"Received generate recipe request: session_id='{request.session_id}' ingredients={request.ingredients} dietary_preferences={request.dietary_preferences} recipe_type='{request.recipe_type}'"
+        )
 
-        # Use the mongo manager for all DB operations
+        # Save session details to DB
         await mongo_manager.safe_operation(
             mongo_manager.sessions_collection.update_one,
             {"session_id": request.session_id},
@@ -781,11 +781,13 @@ async def generate_recipe(request: RecipeRequest):
             upsert=True
         )
 
+        # ✅ Generate recipe
         recipe = await generate_llama_recipe(
             request.ingredients,
             request.dietary_preferences
         )
 
+        # ✅ Encode only after recipe is defined
         recipe_data = jsonable_encoder(recipe)
         recipe_data.update({
             "session_id": request.session_id,
@@ -793,17 +795,19 @@ async def generate_recipe(request: RecipeRequest):
             "api_source": "llama"
         })
 
+        # ✅ Insert recipe to DB
         try:
             await mongo_manager.safe_operation(
                 mongo_manager.recipes_collection.insert_one,
-                recipe_data.copy()  # Use copy to avoid modifying original
+                recipe_data.copy()
             )
-            logger.info(f"Successfully saved recipe to database")
+            logger.info("Successfully saved recipe to database")
         except Exception as e:
             logger.error(f"Failed to insert recipe into DB: {e}")
-            # Continue without raising - recipe generation succeeded even if DB save failed
 
+        # Remove MongoDB internal _id before returning
         recipe_data.pop("_id", None)
+
         return JSONResponse(
             status_code=200,
             content={
@@ -817,7 +821,8 @@ async def generate_recipe(request: RecipeRequest):
         raise
     except Exception as e:
         logger.error(f"Unexpected error in generate-recipe: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
+
 
 
 @app.get("/api/recipe/{recipe_id}")
