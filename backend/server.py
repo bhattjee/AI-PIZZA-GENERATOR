@@ -356,26 +356,64 @@ def fix_json_response(response_text: str) -> Optional[Dict]:
         # Remove JSON code block markers if present
         response_text = response_text.replace('```json', '').replace('```', '').strip()
         
-        # Fix unclosed quotes
-        response_text = re.sub(r'([{,])\s*([a-zA-Z0-9_]+)\s*:\s*([^"\s][^,}\n]*)', r'\1"\2": "\3"', response_text)
-        
-        # Remove trailing commas
-        response_text = re.sub(r',\s*([}\]])', r'\1', response_text)
-        
-        # Ensure proper closing of objects/arrays
+        # If response is truncated, try to complete it
         if not response_text.endswith('}'):
-            # Find the last complete object/array and close it
-            last_brace = max(response_text.rfind('}'), response_text.rfind(']'))
-            if last_brace != -1:
-                response_text = response_text[:last_brace+1]
+            # Find the last complete object structure
+            brace_count = 0
+            last_valid_pos = 0
+            
+            for i, char in enumerate(response_text):
+                if char == '{':
+                    brace_count += 1
+                elif char == '}':
+                    brace_count -= 1
+                    if brace_count == 0:
+                        last_valid_pos = i + 1
+            
+            if last_valid_pos > 0:
+                response_text = response_text[:last_valid_pos]
             else:
-                # If no complete objects found, try to close the main object
-                response_text = response_text[:response_text.rfind('{')+1] + '}'
+                # Try to close the JSON properly
+                open_braces = response_text.count('{') - response_text.count('}')
+                open_brackets = response_text.count('[') - response_text.count(']')
+                
+                # Remove any trailing comma
+                response_text = re.sub(r',\s*$', '', response_text.strip())
+                
+                # Close arrays first, then objects
+                response_text += ']' * open_brackets
+                response_text += '}' * open_braces
+        
+        # Fix common formatting issues
+        # Remove trailing commas before closing brackets/braces
+        response_text = re.sub(r',(\s*[}\]])', r'\1', response_text)
+        
+        # Fix unquoted keys
+        response_text = re.sub(r'([{,]\s*)([a-zA-Z_][a-zA-Z0-9_]*)\s*:', r'\1"\2":', response_text)
         
         # Parse the cleaned JSON
         return json.loads(response_text)
+        
     except json.JSONDecodeError as e:
         logger.error(f"Failed to fix JSON response: {e}")
+        # If all else fails, try to extract a partial valid JSON
+        try:
+            # Look for the main recipe object
+            start_idx = response_text.find('{')
+            if start_idx != -1:
+                # Try to find a reasonable end point
+                for end_idx in range(len(response_text) - 1, start_idx, -1):
+                    try:
+                        partial_json = response_text[start_idx:end_idx + 1]
+                        if partial_json.endswith('}'):
+                            return json.loads(partial_json)
+                    except:
+                        continue
+        except:
+            pass
+        return None
+    except Exception as e:
+        logger.error(f"Unexpected error in JSON fixing: {e}")
         return None
 
 async def generate_recipe_with_llama(ingredients: List[str], dietary_preferences: DietaryPreferences) -> Optional[Dict]:
@@ -387,66 +425,55 @@ async def generate_recipe_with_llama(ingredients: List[str], dietary_preferences
 
         LLAMA_MODEL = os.environ.get("LLAMA_MODEL", "deepseek/deepseek-r1-0528-qwen3-8b:free")
 
-        prompt = f"""Generate a detailed pizza recipe in strict JSON format with these requirements:
+        # Create a more concise but complete prompt
+        dietary_info = ", ".join(dietary_preferences.diet_types) if dietary_preferences.diet_types else "None"
+        allergens = ", ".join(dietary_preferences.allergen_avoidance) if dietary_preferences.allergen_avoidance else "None"
+        
+        prompt = f"""Create a pizza recipe in JSON format:
 
-Input Parameters:
-- Ingredients: {", ".join(ingredients)}
-- Dietary Preferences: {dietary_preferences.diet_types or 'None'}
-- Allergens to Avoid: {dietary_preferences.allergen_avoidance or 'None'}
-- Spice Level: {dietary_preferences.spice_level}/4
+Ingredients: {", ".join(ingredients[:8])}  
+Diet: {dietary_info}
+Avoid: {allergens}  
+Spice: {dietary_preferences.spice_level}/4
 
-Required JSON Structure:
+Return valid JSON with this exact structure:
 {{
   "name": "Creative pizza name",
-  "ingredients": ["list", "of", "ingredients"],
-  "dietary_info": ["list", "of", "dietary", "tags"],
-  "spice_level": 1,
-  "prep_time": 15,
-  "cook_time": 20,
+  "ingredients": {ingredients[:8]},
+  "dietary_info": {dietary_preferences.diet_types or ["Regular"]},
+  "spice_level": {dietary_preferences.spice_level},
+  "prep_time": 20,
+  "cook_time": 15,
   "total_time": 35,
   "servings": 4,
-  "difficulty": "Easy|Medium|Hard",
+  "difficulty": "Medium",
   "steps": [
-    {{
-      "step_number": 1,
-      "title": "Step title",
-      "description": "Detailed instructions",
-      "duration_minutes": 10,
-      "temperature": "Optional",
-      "ingredients_used": ["list"],
-      "equipment": ["list"]
-    }}
+    {{"step_number": 1, "title": "Make Dough", "description": "Mix flour, water, yeast, salt. Knead 8min. Rise 1hr.", "duration_minutes": 70, "ingredients_used": ["flour"], "equipment": ["bowl"]}},
+    {{"step_number": 2, "title": "Prepare Sauce", "description": "Heat oil, add garlic, then sauce ingredients. Simmer 10min.", "duration_minutes": 10, "ingredients_used": ["sauce"], "equipment": ["pan"]}},
+    {{"step_number": 3, "title": "Preheat Oven", "description": "Heat oven to 475°F. Place pizza stone if using.", "duration_minutes": 15, "temperature": "475°F", "equipment": ["oven"]}},
+    {{"step_number": 4, "title": "Assemble Pizza", "description": "Roll dough, add sauce, cheese, then toppings.", "duration_minutes": 10, "ingredients_used": ["dough", "sauce", "toppings"], "equipment": ["rolling pin"]}},
+    {{"step_number": 5, "title": "Bake", "description": "Bake 12-15min until golden and bubbly.", "duration_minutes": 15, "temperature": "475°F", "equipment": ["oven"]}}
   ],
   "sauce_preparation": [
-    {{
-      "step_number": 1,
-      "title": "Step title",
-      "description": "Detailed sauce preparation instructions",
-      "duration_minutes": 5,
-      "ingredients_used": ["list of sauce ingredients"],
-      "equipment": ["list of sauce equipment"]
-    }}
+    {{"step_number": 1, "title": "Heat Base", "description": "Heat 2 tbsp oil in pan over medium heat.", "duration_minutes": 2, "ingredients_used": ["oil"], "equipment": ["pan"]}},
+    {{"step_number": 2, "title": "Add Aromatics", "description": "Add garlic, cook 1 minute until fragrant.", "duration_minutes": 1, "ingredients_used": ["garlic"], "equipment": []}},
+    {{"step_number": 3, "title": "Build Sauce", "description": "Add selected sauce base and seasonings. Simmer 5-8 minutes.", "duration_minutes": 8, "ingredients_used": ["sauce base", "seasonings"], "equipment": []}}
   ],
-  "tips": ["Helpful tip 1", "Helpful tip 2"],
-  "nutrition": {{
-    "calories": 500,
-    "protein": 20,
-    "carbs": 60,
-    "fat": 15
-  }}
+  "tips": ["Use pizza stone for crispy crust", "Don't overload toppings", "Let dough rest at room temp"],
+  "nutrition": {{"calories": 480, "protein": 18, "carbs": 52, "fat": 22}}
 }}
 
-IMPORTANT: Return ONLY valid JSON, properly formatted with all quotes closed and no trailing commas."""
+Return ONLY the JSON, no other text."""
 
         payload = {
             "model": LLAMA_MODEL,
             "messages": [
-                {"role": "system", "content": "You are a helpful pizza recipe assistant that returns properly formatted JSON."},
+                {"role": "system", "content": "You are a pizza recipe expert. Return only properly formatted JSON responses with no additional text or markdown."},
                 {"role": "user", "content": prompt}
             ],
-            "temperature": 0.7,
-            "top_p": 0.9,
-            "max_tokens": 1500,
+            "temperature": 0.3,  # Lower temperature for more consistent JSON
+            "top_p": 0.8,
+            "max_tokens": 2500,  # Increased token limit
             "response_format": {"type": "json_object"}
         }
 
@@ -475,19 +502,31 @@ IMPORTANT: Return ONLY valid JSON, properly formatted with all quotes closed and
             return None
 
         try:
-            response_text = response.json()["choices"][0]["message"]["content"]
-            logger.warning(f"Raw LLM response:\n{response_text[:1000]}")
+            response_data = response.json()
+            if "choices" not in response_data or not response_data["choices"]:
+                logger.error("Invalid API response structure")
+                return None
+                
+            response_text = response_data["choices"][0]["message"]["content"].strip()
+            
+            # Log first 500 chars instead of 1000 to avoid log spam
+            logger.info(f"LLM response preview: {response_text[:500]}{'...' if len(response_text) > 500 else ''}")
 
-            # First try to parse directly
+            # Try direct JSON parsing first
             try:
                 recipe_data = json.loads(response_text)
+                logger.info("Successfully parsed JSON response")
                 return recipe_data
-            except json.JSONDecodeError:
-                # If direct parse fails, try to fix common issues
+            except json.JSONDecodeError as e:
+                logger.warning(f"Direct JSON parse failed: {e}")
+                # Try to fix common JSON issues
                 recipe_data = fix_json_response(response_text)
                 if recipe_data:
+                    logger.info("Successfully fixed and parsed JSON response")
                     return recipe_data
-                raise
+                else:
+                    logger.error("Failed to fix JSON response")
+                    return None
 
         except (json.JSONDecodeError, KeyError) as e:
             logger.error(f"Failed to parse API response: {str(e)}")
@@ -495,6 +534,9 @@ IMPORTANT: Return ONLY valid JSON, properly formatted with all quotes closed and
 
     except requests.exceptions.Timeout:
         logger.error("API request timed out")
+        return None
+    except requests.exceptions.RequestException as e:
+        logger.error(f"API request failed: {str(e)}")
         return None
     except Exception as e:
         logger.error(f"Unexpected error in API call: {str(e)}")
