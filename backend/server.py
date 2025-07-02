@@ -658,22 +658,22 @@ async def generate_llama_recipe(ingredients: List[str], dietary_preferences: Die
 
 async def safe_db_operation(operation, *args, **kwargs):
     """Database safe operation handler (backward compatibility)"""
-        return await mongo_manager.safe_operation(operation, *args, **kwargs)
+    return await mongo_manager.safe_operation(operation, *args, **kwargs)
 
 # API Routes
 @app.get("/")
-    async def root():
+async def root():
     return {"message": "Pizza Generator API", "status": "running"}
 
 @app.get("/api/ingredients")
-    async def get_ingredients():
+async def get_ingredients():
     return {"categories": INGREDIENT_CATEGORIES}
 
 
 @app.get("/api/ingredients/{category}")
-    async def get_ingredients_by_category(category: str):
+async def get_ingredients_by_category(category: str):
     if category not in INGREDIENT_CATEGORIES:
-    raise HTTPException(status_code=404, detail="Category not found")
+        raise HTTPException(status_code=404, detail="Category not found")
     return {"category": category, "ingredients": INGREDIENT_CATEGORIES[category]}
 
 
