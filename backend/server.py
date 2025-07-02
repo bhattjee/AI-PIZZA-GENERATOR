@@ -24,12 +24,17 @@ import pymongo
 import certifi
 import ssl
 
+# Load environment variables
+load_dotenv()
+
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Initialize FastAPI
-app = FastAPI()
+app = FastAPI(title="Pizza Recipe Generator API",
+             description="API for generating custom pizza recipes using AI",
+             version="1.0.0")
 
 # Configure CORS
 app.add_middleware(
@@ -58,7 +63,7 @@ LLAMA_API_BASE_URL = os.environ.get(
     "https://openrouter.ai/api/v1"
 )
 
-LLAMA_TIMEOUT = 30  # seconds
+LLAMA_TIMEOUT = int(os.environ.get("LLAMA_TIMEOUT", 30))  # seconds
 
 MONGO_URI = os.getenv("MONGODB_URI")
 if not MONGO_URI:
