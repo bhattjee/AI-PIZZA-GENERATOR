@@ -308,6 +308,14 @@ class NutritionInfo(BaseModel):
     carbohydrates: Optional[float] = None
     fiber: Optional[float] = None
     sugar: Optional[float] = None
+    
+class SauceStep(BaseModel):
+    step_number: int
+    title: str
+    description: str
+    duration_minutes: Optional[int]
+    ingredients_used: List[str]
+    equipment: List[str]
 
 
 class Recipe(BaseModel):
@@ -323,7 +331,7 @@ class Recipe(BaseModel):
     servings: int
     difficulty: str
     steps: List[CookingStep]
-    sauce_preparation: List[str]
+    sauce_preparation: List[SauceStep]
     tips: List[str]
     source_url: Optional[str] = None
     nutrition: Optional[NutritionInfo] = None
