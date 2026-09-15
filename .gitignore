@@ -4,6 +4,9 @@
 .idea/
 .vscode/
 
+# Git configuration
+.gitconfig
+
 # Dependencies
 node_modules/
 /node_modules
