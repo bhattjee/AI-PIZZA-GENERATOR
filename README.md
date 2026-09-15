@@ -1,4 +1,4 @@
-# 🍕 AI Pizza Generator
+# AI intelligent Pizza Recipe Generator
 
 An intelligent pizza recipe generator that uses AI to create custom pizza recipes based on your selected ingredients and dietary preferences. Built with React, FastAPI, and powered by OpenRouter's AI models.
 
@@ -7,7 +7,7 @@ An intelligent pizza recipe generator that uses AI to create custom pizza recipe
 ![Python](https://img.shields.io/badge/Python-3.11.9-3776AB?logo=python)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.104.1-009688?logo=fastapi)
 
-## ✨ Features
+## Features
 
 - **Smart Ingredient Selection**: Choose from 7 categories including flours, cheeses, meats, vegetables, sauces, spices & herbs, and other toppings
 - **Dietary Preference Support**: Vegan, vegetarian, gluten-free, keto, paleo, and 9+ other diet types
@@ -18,7 +18,7 @@ An intelligent pizza recipe generator that uses AI to create custom pizza recipe
 - **Related Recipe Suggestions**: Finds similar recipes based on your ingredient selections
 - **Responsive Design**: Beautiful, modern UI with dark mode support
 
-## 🏗️ Architecture
+## Architecture
 
 ### Frontend
 - **Framework**: React 19.0.0
@@ -34,7 +34,7 @@ An intelligent pizza recipe generator that uses AI to create custom pizza recipe
 - **AI Integration**: OpenRouter API (DeepSeek model)
 - **Authentication**: Environment-based API key management
 
-## 🚀 Getting Started
+## Getting Started
 
 ### Prerequisites
 
@@ -47,7 +47,7 @@ An intelligent pizza recipe generator that uses AI to create custom pizza recipe
 
 1. **Clone the repository**
    ```bash
-   git clone https://github.com/yourusername/AI-PIZZA-GENERATOR.git
+   git clone https://github.com/bhattjee/AI-PIZZA-GENERATOR.git
    cd AI-PIZZA-GENERATOR
    ```
 
@@ -93,7 +93,7 @@ An intelligent pizza recipe generator that uses AI to create custom pizza recipe
 
    The frontend will be available at `http://localhost:3000` and the backend API at `http://localhost:8000`
 
-## 📁 Project Structure
+## Project Structure
 
 ```
 AI-PIZZA-GENERATOR/
@@ -118,7 +118,7 @@ AI-PIZZA-GENERATOR/
 └── README.md               # This file
 ```
 
-## 🔧 API Endpoints
+## API Endpoints
 
 ### Health Check
 - `GET /` - API status
@@ -136,7 +136,7 @@ AI-PIZZA-GENERATOR/
 ### Progress Tracking
 - `POST /api/save-cooking-progress` - Save cooking step progress
 
-## 🧪 Testing
+## Testing
 
 ### Backend Tests
 ```bash
@@ -150,7 +150,7 @@ cd frontend
 npm test
 ```
 
-## 🌐 Deployment
+## Deployment
 
 ### Frontend (Vercel)
 1. Connect your GitHub repository to Vercel
@@ -164,7 +164,7 @@ npm test
 3. Set start command: `uvicorn server:app --host 0.0.0.0 --port $PORT`
 4. Add environment variables from `.env` file
 
-## 🔒 Security
+## Security
 
 - API keys are stored in environment variables
 - MongoDB connection uses TLS encryption
@@ -172,7 +172,7 @@ npm test
 - No sensitive data is committed to the repository
 - `.gitignore` excludes all environment files
 
-## 🤝 Contributing
+## Contributing
 
 Contributions are welcome! Please follow these steps:
 
@@ -182,11 +182,11 @@ Contributions are welcome! Please follow these steps:
 4. Push to the branch (`git push origin feature/amazing-feature`)
 5. Open a Pull Request
 
-## 📝 License
+## License
 
 This project is licensed under the MIT License.
 
-## 🙏 Acknowledgments
+## Acknowledgments
 
 - OpenRouter for providing AI API access
 - MongoDB Atlas for database hosting
